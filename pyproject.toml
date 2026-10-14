@@ -1,0 +1,39 @@
+[project]
+name = "copycat-backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.1",
+    "openapi-core>=0.23.1",
+    "pre-commit>=4.7.0",
+    "procrastinate>=3.10.0",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.0",
+    "pyoas[fastapi]>=0.8.0",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "python-multipart>=0.0.32",
+    "ruff>=0.17.0",
+    "sqlalchemy>=2.1.4",
+    "uvicorn>=0.54.0",
+]
+
+
+
+[tool.pyright]
+typeCheckingMode = "strict"
+
+pythonVersion = "3.15"
+include = ["src", "tests"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv"]
+
+reportMissingTypeStubs = "error"         # Errors out if a library lacks type hints
+reportUnknownArgumentType = "error"      # Blocks implicitly typed 'Any' arguments
+reportUnknownLambdaType = "error"        # Blocks implicitly typed lambdas
+reportUnknownVariableType = "error"      # Blocks variables that infer to 'Any'
+reportUnknownMemberType = "error"        # Blocks accessing un-typed attributes
+reportMissingParameterType = "error"     # Requires type hints for all function arguments
+reportUnnecessaryIsInstance = "warning"  # Warns if an isinstance check is always True/False

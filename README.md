@@ -1,2 +1,3 @@
 # copycat-backend
-beckend port for copycat notebooks
+
+Python backend re-implementation for copycat notebooks web app

@@ -1,0 +1,38 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pyrefly
+        name: pyrefly
+        entry: uvx pyrefly check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      #      - id: pytest
+      #        name: pytest
+      #        entry: uv run pytest
+      #        language: system
+      #        types: [python]
+      #        pass_filenames: false
+
+      - id: commit-msg-validation
+        name: Validate commit message format
+        entry: python3 commit-msg-hook.py
+        language: system
+        stages: [commit-msg]
