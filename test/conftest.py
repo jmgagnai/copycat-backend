@@ -1,0 +1,118 @@
+"""Test harness.
+
+Tests run against the real development database named in ``DATABASE_URL`` (or
+``TEST_DATABASE_URL`` when set). Nothing is truncated: every test runs inside one database
+transaction that is rolled back at the end, so the development data is never touched and two
+tests may register the same email. Route code still calls ``commit()``; the session turns each
+of those into a savepoint release inside the outer transaction.
+"""
+
+import os
+import uuid
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+
+import asyncpg
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+
+from app.main import app
+from db import get_db
+from settings import settings
+from storage import StoredObject
+
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or settings.DATABASE_URL
+TEST_DSN = TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+
+@pytest_asyncio.fixture(scope="session")
+async def engine() -> AsyncIterator[AsyncEngine]:
+    """One engine for the whole run; every DB test is skipped when Postgres is unreachable."""
+    try:
+        conn = await asyncpg.connect(TEST_DSN, timeout=3)
+        await conn.close()
+    except Exception as err:  # noqa: BLE001
+        pytest.skip(f"No database at {TEST_DSN}: {err}")
+    engine = create_async_engine(TEST_DATABASE_URL)
+    yield engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    """A session whose work is rolled back when the test ends."""
+    async with engine.connect() as conn:
+        await conn.begin()
+        session = AsyncSession(
+            bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False
+        )
+        try:
+            yield session
+        finally:
+            await session.close()
+            await conn.rollback()
+
+
+class FakeStorage:
+    """In-memory stand-in for MinIO, with the same two methods and return shape as S3Storage."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    async def put_object(self, key: str, body: bytes, content_type: str) -> None:
+        self.objects[key] = body
+
+    async def get_object(self, key: str) -> StoredObject:
+        return StoredObject(
+            body=self.objects[key], content_length=len(self.objects[key])
+        )
+
+
+@dataclass
+class FakeJobs:
+    enqueued: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
+
+    async def enqueue_convert_to_markdown(
+        self, document_id: uuid.UUID, version_id: uuid.UUID
+    ) -> None:
+        self.enqueued.append((document_id, version_id))
+
+
+@pytest_asyncio.fixture
+async def client(db: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """The app driven in-process; every request shares the test's rolled-back session."""
+
+    async def override_get_db() -> AsyncIterator[AsyncSession]:
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.state.storage = FakeStorage()
+    app.state.jobs = FakeJobs()
+    app.state.app_events = None
+    app.state.chat = None
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as http:
+        yield http
+    app.dependency_overrides.clear()
+
+
+async def sign_in(
+    client: AsyncClient, email: str = "ada@example.com", password: str = "correct horse"
+) -> dict:
+    """Registers and logs in; the session cookie stays on the client."""
+    user = (
+        await client.post("/auth/register", json={"email": email, "password": password})
+    ).json()
+    assert (
+        await client.post("/auth/login", json={"email": email, "password": password})
+    ).status_code == 200
+    return user
+
+
+async def create_notebook(client: AsyncClient, title: str = "Research") -> dict:
+    response = await client.post("/notebooks", json={"title": title})
+    assert response.status_code == 201
+    return response.json()

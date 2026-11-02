@@ -1,7 +1,2 @@
-from .models import (
-    SearchChatThreadsResponse as SearchChatThreadsResponse,
-)
-from .models import (
-    SearchNotebookResponse as SearchNotebookResponse,
-)
-from .router import router as search_router  # noqa: F401
+from .search_dto import SearchChatThreadsResponse, SearchNotebookResponse  # noqa: F401
+from .search_router import router as search_router  # noqa: F401

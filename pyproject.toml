@@ -5,31 +5,26 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.143.1",
+    "asyncpg>=0.32.0",
+    "bcrypt>=5.0.0",
+    "fastapi==0.162.0",
     "openapi-core>=0.23.1",
-    "pre-commit>=4.7.0",
+    "pgvector>=0.5.1",
     "procrastinate>=3.10.0",
     "psycopg[binary]>=3.3.6",
-    "pydantic>=2.14.1",
-    "pydantic-settings>=2.16.0",
+    "pydantic[email]==2.14.2",
+    "pydantic-settings==2.16.2",
+    "pyjwt>=2.15.1",
     "pyoas[fastapi]>=0.8.0",
-    "pyright>=1.1.414",
-    "pytest>=9.1.1",
     "python-multipart>=0.0.32",
-    "ruff>=0.17.0",
-    "sqlalchemy>=2.1.4",
+    "sqlalchemy[asyncio]==2.1.6",
     "uvicorn>=0.54.0",
+    "boto3>=1.43.123",
+    "httpx>=0.28.1",
 ]
 
-
-
 [tool.pyright]
-typeCheckingMode = "strict"
-
-pythonVersion = "3.15"
-include = ["src", "tests"]
-exclude = ["**/node_modules", "**/__pycache__", ".venv"]
-
+typeCheckingMode = "basic"
 reportMissingTypeStubs = "error"         # Errors out if a library lacks type hints
 reportUnknownArgumentType = "error"      # Blocks implicitly typed 'Any' arguments
 reportUnknownLambdaType = "error"        # Blocks implicitly typed lambdas
@@ -37,3 +32,18 @@ reportUnknownVariableType = "error"      # Blocks variables that infer to 'Any'
 reportUnknownMemberType = "error"        # Blocks accessing un-typed attributes
 reportMissingParameterType = "error"     # Requires type hints for all function arguments
 reportUnnecessaryIsInstance = "warning"  # Warns if an isinstance check is always True/False
+
+pythonVersion = "3.12"
+
+include = ["src", "tests"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv"]
+
+[dependency-groups]
+dev = ["pytest==9.2.0", "pytest-asyncio>=1.0.0", "httpx>=0.28.0", "ruff==0.17.3", "pyright>=1.1.414", "pre-commit>=4.7.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["test"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

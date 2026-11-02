@@ -1,22 +1,10 @@
-from .models import (
-    CreateChatThreadBody as CreateChatThreadBody,
+from .chat_dto import (  # noqa: F401
+    CreateChatThreadBody,
+    CreateChatThreadResponse,
+    RenameChatThreadBody,
+    RenameChatThreadResponse,
+    RestoreChatThreadResponse,
+    SendChatMessageBody,
+    SendChatMessageResponse,
 )
-from .models import (
-    CreateChatThreadResponse as CreateChatThreadResponse,
-)
-from .models import (
-    RenameChatThreadBody as RenameChatThreadBody,
-)
-from .models import (
-    RenameChatThreadResponse as RenameChatThreadResponse,
-)
-from .models import (
-    RestoreChatThreadResponse as RestoreChatThreadResponse,
-)
-from .models import (
-    SendChatMessageBody as SendChatMessageBody,
-)
-from .models import (
-    SendChatMessageResponse as SendChatMessageResponse,
-)
-from .router import router as chat_router  # noqa: F401
+from .chat_router import router as chat_router  # noqa: F401
