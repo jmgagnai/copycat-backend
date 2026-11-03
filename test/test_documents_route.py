@@ -2,6 +2,7 @@
 fixture, every test's rows are rolled back, and each test creates its own Notebook."""
 
 import uuid
+from typing import Any
 
 from httpx import AsyncClient
 from sqlalchemy import text
@@ -16,7 +17,7 @@ async def upload(
     notebook_id: str,
     filename: str = "notes.txt",
     content: bytes = b"hello world",
-) -> dict:
+) -> dict[str, Any]:
     response = await client.post(
         f"/notebooks/{notebook_id}/documents",
         files={"file": (filename, content, "text/plain")},

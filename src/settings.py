@@ -40,4 +40,4 @@ class Settings(BaseSettings):
         return {e.strip().lower() for e in self.ADMIN_EMAILS.split(",") if e.strip()}
 
 
-settings = Settings()
+settings = Settings()  # pyright: ignore[reportCallIssue]  # fields come from .env

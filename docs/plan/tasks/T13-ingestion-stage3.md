@@ -160,19 +160,47 @@ rows go with `ON DELETE CASCADE`, and the `AFTER INSERT` trigger of migration 00
 
 ## What to build
 
-### Step 1. `ingestion/chunking.py::chunk_markdown(markdown, chunk_size=1000, chunk_overlap=150)`
+Four steps. Step 1 is the splitter, step 2 the range finder, step 3 the job that embeds and
+stores, step 4 the tests. Each step says what it is for, then what to write, then how you know
+it is done.
 
-1. `DocumentChunk` frozen dataclass: `index`, `heading_path: list[str]`, `text`.
-2. `split_keeping_separator`, `split_into_pieces` and `merge_pieces` as in the tutorial, with
-   the two edge cases from `chunking.ts`: when no whole piece fits the overlap, keep the tail
-   `buffer[-1][-chunk_overlap:]`; when the carried overlap plus the next piece exceeds
-   `chunk_size`, drop pieces from the front of the buffer (and cut the last one) until it fits.
-3. `chunk_markdown`: clamp `chunk_overlap` to `chunk_size - 1`; for each section of T12's
-   `split_markdown_sections`, split its content on embedded pictures
-   (`EMBEDDED_PICTURE.split(content)`), strip each stretch, skip empty ones and ones with no
-   word character (a picture in a list item leaves its bullet behind), then
-   `merge_pieces(split_into_pieces(stretch, ...))`, strip each chunk and append a
-   `DocumentChunk(len(chunks), section.heading_path, text)`.
+### Step 1. Split the Markdown into chunks
+
+**File:** `ingestion/chunking.py`
+
+```python
+@dataclass(frozen=True)
+class DocumentChunk:
+    index: int
+    heading_path: list[str]  # the section's path, from T12's split_markdown_sections
+    text: str  # a verbatim slice of the Markdown
+
+
+def chunk_markdown(
+    markdown: str, chunk_size: int = 1000, chunk_overlap: int = 150
+) -> list[DocumentChunk]: ...
+```
+
+#### 1a. The three splitter functions
+
+`split_keeping_separator`, `split_into_pieces` and `merge_pieces` as in the tutorial, plus the
+two edge cases of `chunking.ts` in `merge_pieces`:
+
+- **No whole piece fits the overlap.** Keep the tail of the last piece instead:
+  `buffer[-1][-chunk_overlap:]`.
+- **The carried overlap plus the next piece exceeds `chunk_size`.** Drop pieces from the front of
+  the buffer, and cut the last one, until it fits. Overlap gives way; size never does.
+
+#### 1b. `chunk_markdown`
+
+1. Clamp `chunk_overlap` to `chunk_size - 1`.
+2. For each section of T12's `split_markdown_sections(markdown)`:
+   - split its content on embedded pictures: `EMBEDDED_PICTURE.split(section.content)`;
+   - strip each stretch; skip it when empty or when it has no word character (a picture in a
+     list item leaves its bullet behind);
+   - `merge_pieces(split_into_pieces(stretch, chunk_size, SEPARATORS), chunk_size, chunk_overlap)`;
+   - strip each resulting chunk and append
+     `DocumentChunk(len(chunks), section.heading_path, text)`.
 
 ```python
 markdown = (
@@ -185,50 +213,120 @@ assert chunks[-1].heading_path == ["B"] and chunks[-1].text == "short"
 ```
 
 **DONE WHEN:** the assertions above pass as a unit test, consecutive chunks of the long section
-share text (overlap), and an embedded picture splits a paragraph into two chunks:
+share text (the overlap), and an embedded picture splits a paragraph into two chunks:
 
 ```python
 chunks = chunk_markdown("# A\n\nbefore ![Image](data:image/png;base64,AAAA) after")
-assert [c.content for c in chunks] == ["before", "after"]
+assert [c.text for c in chunks] == ["before", "after"]
 ```
 
-### Step 2. `document/chunk_ranges.py::locate_in_markdown(markdown, texts)`
+![img_87.png](screenshots/img_87.png)
 
-A `ChunkRange(char_start, char_end)` frozen dataclass and the forward-cursor search of the
-tutorial, returning `list[ChunkRange | None]` in chunk order. It lives in `document/` because
-T16's Citations read the same ranges.
+### Step 2. Find where each chunk sits
 
-**DONE WHEN:** the ranges come out as (0, 10), (6, 16) and `None`:
+**File:** `document/chunk_ranges.py`
+
+It lives in `document/`, not `ingestion/`, because T16's Citations read the same ranges.
+
+```python
+@dataclass(frozen=True)
+class ChunkRange:
+    char_start: int
+    char_end: int
+
+
+def locate_in_markdown(markdown: str, texts: list[str]) -> list[ChunkRange | None]: ...
+```
+
+The forward-cursor search of the tutorial, one result per text in chunk order, `None` when a
+text is not found.
+
+**DONE WHEN:**
 
 ```python
 assert locate_in_markdown("alpha beta gamma", ["alpha beta", "beta gamma", "zzz"]) == [
-    (0, 10),
-    (6, 16),
+    ChunkRange(0, 10),
+    ChunkRange(6, 16),
     None,
 ]
 ```
 
-### Step 3. `ingestion/embed_chunks.py::run_embed_chunks_job(deps, ref)`
+![img_88.png](screenshots/img_88.png)
 
-`EMBED_CHUNKS_QUEUE = "embed-chunks"`, `EmbedChunksDeps(db, embed: Embedder, chunk_size=1000,
-chunk_overlap=150)`, `to_vector_literal`, and:
 
-1. `replace_chunks(db, version_id, markdown, chunks, vectors)`: `DELETE FROM chunks WHERE
-   document_version_id = :id`; then for each `(chunk, vector, located)` from
-   `zip(chunks, vectors, locate_in_markdown(markdown, [c.text for c in chunks]), strict=True)`
-   insert the chunk (tutorial step 5) with `RETURNING id` and, when `located` is not `None`,
-   `INSERT INTO chunk_ranges (chunk_id, char_start, char_end) VALUES (...)`. No commit here.
-2. The job, same shape as stages 1 and 2: `load_version(db, ref, "markdown")`, return if
-   `None`; `set_version_status(..., "indexing")`; `try`: `RuntimeError` on empty Markdown,
-   `chunks = chunk_markdown(row.markdown, deps.chunk_size, deps.chunk_overlap)`,
-   `vectors = await deps.embed([c.text for c in chunks])`, `replace_chunks(...)`,
-   `set_version_status(..., "ready", embedded_at=now, chunk_ranges_located_at=now)` (this
-   commit covers the inserts); `except`: rollback, `failed` with `failed_at="indexing"`, raise.
+### Step 3. The job
 
-Wire the procrastinate task in `jobs/tasks.py`, registered only when the worker has an embedder.
+**File:** `ingestion/embed_chunks.py`
 
-**DONE WHEN:** the two tests of step 4 pass; with a real key an uploaded Document reaches `ready`
-and the chunk count grows:
+```python
+EMBED_CHUNKS_QUEUE = "embed-chunks"
+
+
+@dataclass
+class EmbedChunksDeps:
+    db: AsyncSession
+    embed: Embedder  # T11: Callable[[list[str]], Awaitable[list[list[float]]]]
+    chunk_size: int = 1000
+    chunk_overlap: int = 150
+
+
+def to_vector_literal(vector: list[float]) -> str: ...  # tutorial step 5
+
+
+async def replace_chunks(
+    db: AsyncSession,
+    version_id: uuid.UUID,
+    markdown: str,
+    chunks: list[DocumentChunk],
+    vectors: list[list[float]],
+) -> None: ...
+
+
+async def run_embed_chunks_job(
+    deps: EmbedChunksDeps, ref: DocumentVersionRef
+) -> None: ...
+```
+
+#### 3a. `replace_chunks`
+
+No commit here: the job's final `set_version_status` commits everything at once.
+
+1. Delete the previous set:
+
+   ```sql
+   DELETE FROM chunks WHERE document_version_id = :id
+   ```
+
+2. Locate the new set: `ranges = locate_in_markdown(markdown, [c.text for c in chunks])`.
+3. For each `(chunk, vector, located)` in `zip(chunks, vectors, ranges, strict=True)`:
+   - insert the chunk with the statement of tutorial step 5, `RETURNING id`;
+   - when `located` is not `None`:
+
+     ```sql
+     INSERT INTO chunk_ranges (chunk_id, char_start, char_end) VALUES (:chunk_id, :start, :end)
+     ```
+
+#### 3b. `run_embed_chunks_job`
+
+Same shape as stages 1 and 2:
+
+1. `row = await load_version(db, ref, "markdown")`; return if `None`.
+2. `set_version_status(..., "indexing")`.
+3. In a `try`:
+   - raise `RuntimeError` if the Markdown is empty;
+   - `chunks = chunk_markdown(row.markdown, deps.chunk_size, deps.chunk_overlap)`;
+   - `vectors = await deps.embed([c.text for c in chunks])`;
+   - `await replace_chunks(db, ref.version_id, row.markdown, chunks, vectors)`;
+   - `set_version_status(..., "ready", embedded_at=now, chunk_ranges_located_at=now)`. This
+     commit covers the inserts above.
+4. `except Exception as err`: rollback, `set_version_status(..., "failed", error=err,
+   failed_at="indexing")`, re-raise.
+
+Wire the procrastinate task in `jobs/tasks.py` (three lines, like stages 1 and 2), registered
+only when the worker has an embedder.
+
+**DONE WHEN:** the two tests of step 4 pass, and with a real key an uploaded Document reaches
+`ready` and the chunk count grows:
 
 ```sql
 SELECT count(*) FROM chunks;
@@ -236,28 +334,44 @@ SELECT count(*) FROM chunks;
 
 ### Step 4. Tests
 
-Pure, in `test/test_ingestion_pure.py`: the chunking assertions of step 1 and the
+**Pure, in `test/test_ingestion_pure.py`:** the chunking assertions of step 1 and the
 `locate_in_markdown` case of step 2.
 
-With the database, in `test/test_ingestion_jobs.py`: seed a `summarized` version with the
-T12 test Markdown and run the job with a fake embedder:
+**With the database, in `test/test_ingestion_jobs.py`:**
+
+*Happy path.* Seed a `summarized` version with the T12 test Markdown and run the job with a
+fake embedder:
 
 ```python
 async def embed(texts: list[str]) -> list[list[float]]:
     return [[0.0] * EMBEDDING_DIMENSIONS for _ in texts]
 ```
 
-Assert: status `ready`; every row of `SELECT c.text, r.char_start FROM chunks c JOIN
-chunk_ranges r ON r.chunk_id = c.id WHERE c.document_version_id = :v ORDER BY c.chunk_index`
-satisfies `MARKDOWN[char_start:].startswith(text)`; `SELECT count(*) FROM notebook_words WHERE
-word = 'revenue'` is 1 (the trigger ran). A second test with `markdown=None` expects
-`RuntimeError` and `("failed", "unexpected", "indexing")`.
+Then assert:
+
+- the status is `ready`;
+- every chunk is where its range says. Read the rows with
+
+  ```sql
+  SELECT c.text, r.char_start
+  FROM chunks c JOIN chunk_ranges r ON r.chunk_id = c.id
+  WHERE c.document_version_id = :v
+  ORDER BY c.chunk_index
+  ```
+
+  and check `MARKDOWN[char_start:].startswith(text)` for each;
+- the trigger ran: `SELECT count(*) FROM notebook_words WHERE word = 'revenue'` is 1.
+
+*Empty Markdown.* Seed a version with `markdown=None` and expect `RuntimeError`, and
+`("failed", "unexpected", "indexing")` on the row.
 
 **DONE WHEN:** the pure and job tests are green:
 
 ```sh
 uv run pytest test/test_ingestion_pure.py test/test_ingestion_jobs.py -q
 ```
+
+![img_89.png](screenshots/img_89.png)
 
 ## Acceptance
 

@@ -2,83 +2,79 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+_response = ConfigDict(extra="ignore", frozen=False, populate_by_name=True)
+
+
+class ChatParticipant(BaseModel):
+    """Who did something: the email is what a reader recognises next to prose in a shared Thread."""
+
+    model_config = _response
+    id: uuid.UUID = Field(default=...)
+    email: str = Field(default=...)
+
+
+class ChatThreadResponse(BaseModel):
+    model_config = _response
+    id: uuid.UUID = Field(default=...)
+    notebook_id: uuid.UUID = Field(default=..., serialization_alias="notebookId")
+    title: str = Field(default=...)
+    author: ChatParticipant = Field(default=...)
+    created_at: datetime.datetime = Field(default=..., serialization_alias="createdAt")
+
 
 class CreateChatThreadBody(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=False,
-        populate_by_name=True,
-    )
+    model_config = ConfigDict(extra="forbid", frozen=False, populate_by_name=True)
     title: Annotated[str, Field(min_length=1, default=...)]
-
-
-class CreateChatThreadResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="ignore",
-        frozen=False,
-        populate_by_name=True,
-    )
-    id: uuid.UUID = Field(default=...)
-    notebook_id: uuid.UUID = Field(default=..., alias="notebookId")
-    title: str = Field(default=...)
-    author: dict[str, Any] = Field(default=...)
-    created_at: datetime.datetime = Field(default=..., alias="createdAt")
 
 
 class RenameChatThreadBody(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=False,
-        populate_by_name=True,
-    )
-
+    model_config = ConfigDict(extra="forbid", frozen=False, populate_by_name=True)
     title: Annotated[str, Field(min_length=1, default=...)]
 
 
-class RenameChatThreadResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="ignore",
-        frozen=False,
-        populate_by_name=True,
-    )
+class CitationResponse(BaseModel):
+    """A pointer into one specific Document Version at one specific chunk; `versionNumber`,
+    `filename` and `headingPath` are read off the pinned Version and chunk, never the current one."""
+
+    model_config = _response
     id: uuid.UUID = Field(default=...)
-    notebook_id: uuid.UUID = Field(default=..., alias="notebookId")
-    title: str = Field(default=...)
-    author: dict[str, Any] = Field(default=...)
-    created_at: datetime.datetime = Field(default=..., alias="createdAt")
+    marker: int = Field(default=..., gt=0)
+    document_id: uuid.UUID = Field(default=..., serialization_alias="documentId")
+    document_version_id: uuid.UUID = Field(
+        default=..., serialization_alias="documentVersionId"
+    )
+    version_number: int = Field(default=..., serialization_alias="versionNumber", gt=0)
+    chunk_id: uuid.UUID = Field(default=..., serialization_alias="chunkId")
+    filename: str = Field(default=...)
+    heading_path: list[str] = Field(default=..., serialization_alias="headingPath")
+    char_start: int | None = Field(default=..., serialization_alias="charStart")
+    char_end: int | None = Field(default=..., serialization_alias="charEnd")
 
 
-class RestoreChatThreadResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="ignore",
-        frozen=False,
-        populate_by_name=True,
-    )
+class ChatMessageResponse(BaseModel):
+    """`askedBy` is on both roles: for an answer it is whose question produced it. `citations`
+    is always present, empty for a question."""
+
+    model_config = _response
     id: uuid.UUID = Field(default=...)
-    notebook_id: uuid.UUID = Field(default=..., alias="notebookId")
-    title: str = Field(default=...)
-    author: dict[str, Any] = Field(default=...)
-    created_at: datetime.datetime = Field(default=..., alias="createdAt")
+    thread_id: uuid.UUID = Field(default=..., serialization_alias="threadId")
+    role: Literal["user", "assistant"] = Field(default=...)
+    content: str = Field(default=...)
+    asked_by: ChatParticipant = Field(default=..., serialization_alias="askedBy")
+    citations: list[CitationResponse] = Field(default=...)
+    created_at: datetime.datetime = Field(default=..., serialization_alias="createdAt")
 
 
 class SendChatMessageBody(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=False,
-        populate_by_name=True,
-    )
+    model_config = ConfigDict(extra="forbid", frozen=False, populate_by_name=True)
     content: Annotated[str, Field(min_length=1, default=...)]
 
 
 class SendChatMessageResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="ignore",
-        frozen=False,
-        populate_by_name=True,
-    )
-    question: dict[str, Any] = Field(default=...)
-    answer: dict[str, Any] = Field(default=...)
+    model_config = _response
+    question: ChatMessageResponse = Field(default=...)
+    answer: ChatMessageResponse = Field(default=...)

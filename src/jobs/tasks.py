@@ -14,11 +14,16 @@ from ingestion.convert_to_markdown import (
     run_convert_to_markdown_job,
 )
 from ingestion.docling import MarkdownConverter
+from ingestion.embed_chunks import EmbedChunksDeps, run_embed_chunks_job
 from ingestion.stage import (
     CONVERT_TO_MARKDOWN_QUEUE,
     EMBED_CHUNKS_QUEUE,
     SUMMARIZE_DOCUMENT_QUEUE,
     DocumentVersionRef,
+)
+from ingestion.summarize_document import (
+    SummarizeDocumentDeps,
+    run_summarize_document_job,
 )
 from jobs.app import job_app
 from llm.embeddings import Embedder
@@ -72,12 +77,23 @@ async def convert_to_markdown(document_id: str, version_id: str) -> None:
 
 @job_app.task(queue=SUMMARIZE_DOCUMENT_QUEUE, retry=RETRY)
 async def summarize_document(document_id: str, version_id: str) -> None:
-    log.info("summarize_document: %s", _ref(document_id, version_id))  # T12
+    # Only worked when the worker has a completer: JobQueue leaves the queue out otherwise.
+    assert _deps is not None and _deps.complete is not None
+    async with AsyncSessionLocal() as db:
+        deps = SummarizeDocumentDeps(
+            db, _deps.complete, _deps.models, enqueue_embed_chunks=enqueue_embed_chunks
+        )
+        await run_summarize_document_job(deps, _ref(document_id, version_id))
 
 
 @job_app.task(queue=EMBED_CHUNKS_QUEUE, retry=RETRY)
 async def embed_chunks(document_id: str, version_id: str) -> None:
-    log.info("embed_chunks: %s", _ref(document_id, version_id))  # T13
+    # Only worked when the worker has an embedder: JobQueue leaves the queue out otherwise.
+    assert _deps is not None and _deps.embed is not None
+    async with AsyncSessionLocal() as db:
+        await run_embed_chunks_job(
+            EmbedChunksDeps(db, _deps.embed), _ref(document_id, version_id)
+        )
 
 
 # Enqueue functions. The upload route calls the first through JobQueue (step 3); Stage 1 calls the

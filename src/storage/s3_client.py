@@ -1,8 +1,12 @@
 import asyncio
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import boto3
 from botocore.config import Config
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3 import S3Client
 
 
 @dataclass
@@ -25,7 +29,7 @@ class S3Storage:
         region: str = "us-east-1",
     ):
         self.bucket = bucket
-        self._client = boto3.client(
+        self._client: S3Client = boto3.client(  # pyright: ignore[reportUnknownMemberType]
             "s3",
             endpoint_url=endpoint,
             aws_access_key_id=access_key,

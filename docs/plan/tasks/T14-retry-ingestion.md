@@ -17,27 +17,74 @@ gets a 404 `{"message": "Not Found"}` and shows an error. Accepted.
 
 ## If you pick it up later
 
-The contract answers 202 `{"status": ...}`, 404, or 409 when the Version is not failed or failed
-for a reason the same file would repeat.
+Three pieces: a repository method, a route, and a test. The contract already defines the route:
 
-1. `DocumentRepository.retry_ingestion(notebook_id, document_id, version_id)`: load the Version
-   with the shared `_version_row()` (404 when missing); `UPDATE document_versions SET
-   ingestion_status = 'queued', failure_reason = NULL, failed_at = NULL, ingestion_error = NULL WHERE
-   id = :id AND ingestion_status = 'failed' AND failure_reason = ANY(:retryable)` with
-   `retryable = ['unexpected', 'service-unavailable', 'timed-out']`; rowcount 0 → `not-retryable`;
-   otherwise publish the `queued` status event through `set_version_status` and return `retried`.
-2. Route: map the outcome to 202 `{"status": "queued"}`, 404, 409; enqueue stage 1 after the commit.
-3. Test: a queued Version answers 409; after setting it `failed`/`timed-out` by SQL it answers 202
-   and the stub queue saw the enqueue.
+| Answer | When |
+| --- | --- |
+| 202 `{"status": "queued"}` | the Version was `failed` for a reason worth retrying, and is queued again |
+| 404 | the Notebook, Document or Version does not exist |
+| 409 | the Version is not `failed`, or failed for a reason the same file would repeat |
+
+### 1. The repository method
+
+```python
+RETRYABLE_REASONS = ["unexpected", "service-unavailable", "timed-out"]
+
+RetryOutcome = Literal["retried", "not-found", "not-retryable"]
+
+
+async def retry_ingestion(
+    self, notebook_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID
+) -> RetryOutcome: ...
+```
+
+1. Load the Version with the shared `_version_row()`; `not-found` when it is missing.
+2. Reset it in one conditional UPDATE. The WHERE clause is the whole decision:
+
+   ```sql
+   UPDATE document_versions
+   SET ingestion_status = 'queued',
+       failure_reason = NULL,
+       failed_at = NULL,
+       ingestion_error = NULL
+   WHERE id = :id
+     AND ingestion_status = 'failed'
+     AND failure_reason = ANY(:retryable)
+   ```
+
+   with `{"id": version_id, "retryable": RETRYABLE_REASONS}`.
+3. Read the row count with T08's `rowcount()` helper. Zero rows updated means the Version was
+   not `failed`, or failed for a non-retryable reason: return `not-retryable`.
+4. Otherwise publish the `queued` status event through `set_version_status` (T10) and return
+   `retried`.
+
+### 2. The route
+
+`POST /notebooks/{nb}/documents/{id}/versions/{versionId}/retry`:
+
+- map the outcome to the three answers above;
+- enqueue stage 1 only after the commit, so the worker never sees a row that was rolled back.
+
+### 3. The test
+
+- A `queued` Version answers 409.
+- After setting it `failed` with reason `timed-out` by SQL, it answers 202 and the stub queue saw
+  one `convert_to_markdown` enqueue.
 
 ### What you would need to know
 
-- `UPDATE ... WHERE id = :id AND ingestion_status = 'failed' AND failure_reason = ANY(:retryable)`
-  and reading `result.rowcount` (T08's `rowcount()` helper): 0 rows updated means "not retryable".
-- Passing a Python list as a Postgres array parameter: `{"retryable": ["unexpected", "timed-out"]}`.
-- Mapping a three-valued outcome (`retried`, `not-found`, `not-retryable`) to 202, 404, 409 in the route.
-- Publishing the `queued` status event through `set_version_status` (T10) and enqueueing stage 1
-  only after `commit()`, so the worker never sees a row that was rolled back.
+- **A conditional UPDATE as the decision.** `WHERE ... AND ingestion_status = 'failed' AND
+  failure_reason = ANY(:retryable)`, then `result.rowcount`: 0 rows updated means
+  "not retryable". No separate SELECT, no race between the check and the write.
+- **A Python list as a Postgres array parameter.** Pass the list as-is, asyncpg binds it:
+  `{"retryable": ["unexpected", "service-unavailable", "timed-out"]}`.
+- **A three-valued outcome.** The repository returns `retried`, `not-found` or `not-retryable`;
+  the route maps them to 202, 404 and 409.
+- **Event, then commit, then enqueue.** The `queued` status event goes through
+  `set_version_status` (T10), which commits; stage 1 is enqueued after that `commit()`.
 
-Reference: `retry_ingestion` in `BACKEND/reference-backend/src/document/document_repository.py`
-and the route in `document_router.py`; Node `retryIngestion` in `apps/backend/src/documents/`.
+### References
+
+- Python: `retry_ingestion` in `BACKEND/reference-backend/src/document/document_repository.py`
+  and the route in `document_router.py`.
+- Node: `retryIngestion` in `apps/backend/src/documents/`.

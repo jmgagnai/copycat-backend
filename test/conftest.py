@@ -10,7 +10,7 @@ of those into a savepoint release inside the outer transaction.
 import os
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from typing import Any
 
 import asyncpg
 import pytest
@@ -70,9 +70,9 @@ class FakeStorage:
         )
 
 
-@dataclass
 class FakeJobs:
-    enqueued: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[uuid.UUID, uuid.UUID]] = []
 
     async def enqueue_convert_to_markdown(
         self, document_id: uuid.UUID, version_id: uuid.UUID
@@ -101,7 +101,7 @@ async def client(db: AsyncSession) -> AsyncIterator[AsyncClient]:
 
 async def sign_in(
     client: AsyncClient, email: str = "ada@example.com", password: str = "correct horse"
-) -> dict:
+) -> dict[str, Any]:
     """Registers and logs in; the session cookie stays on the client."""
     user = (
         await client.post("/auth/register", json={"email": email, "password": password})
@@ -112,7 +112,9 @@ async def sign_in(
     return user
 
 
-async def create_notebook(client: AsyncClient, title: str = "Research") -> dict:
+async def create_notebook(
+    client: AsyncClient, title: str = "Research"
+) -> dict[str, Any]:
     response = await client.post("/notebooks", json={"title": title})
     assert response.status_code == 201
     return response.json()

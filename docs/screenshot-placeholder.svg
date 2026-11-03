@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420">
+  <rect width="960" height="420" rx="12" fill="#1f2430" stroke="#3b4252" stroke-width="2"/>
+  <rect x="24" y="24" width="220" height="372" rx="8" fill="#2a303c"/>
+  <rect x="268" y="24" width="668" height="372" rx="8" fill="#2a303c"/>
+  <text x="480" y="200" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" fill="#d8dee9">Screenshot of the Copycat Notebooks UI</text>
+  <text x="480" y="240" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" fill="#8f98a8">replace docs/screenshot-placeholder.svg with a capture of a Notebook, a ready Document and a chat answer</text>
+</svg>

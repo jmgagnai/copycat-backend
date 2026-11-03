@@ -13,7 +13,7 @@ from event.events_router import to_sse_frame
 
 def test_sse_frame_has_an_id_and_unnamed_data() -> None:
     event = AppEvent(
-        id=uuid.uuid4(), type="x", topic="t", occurred_at=datetime.now(UTC), data={}
+        id=uuid.uuid4(), type="x", topic="t", occurredAt=datetime.now(UTC), data={}
     )
     frame = to_sse_frame(event)
     assert frame.startswith("id: ") and "event:" not in frame and frame.endswith("\n\n")
@@ -34,10 +34,8 @@ async def test_publish_stamps_the_event(db: AsyncSession) -> None:
 
     assert isinstance(event, AppEvent)
     assert isinstance(event.id, uuid.UUID)
-    assert (
-        event.occurred_at.tzinfo is not None
-        and event.occurred_at.utcoffset().total_seconds() == 0
-    )
+    offset = event.occurred_at.utcoffset()
+    assert offset is not None and offset.total_seconds() == 0
     assert event.type == draft.type
     assert event.topic == f"notebook:{notebook_id}"
     assert event.data == {"stage": "metadata"}

@@ -45,68 +45,107 @@ or deleted Notebook answers 404 and not an empty result.
 
 ## What to build
 
-1. **The two stub routes** in `src/search/search_router.py`:
-   ```python
-   router = APIRouter(tags=["search"])
-   NotebookId = Annotated[uuid.UUID, Path(alias="notebookId")]
-   EMPTY_SEARCH = {"correctedQuery": None, "words": [], "total": 0, "results": []}
+Three small steps: two stub routes, two files to delete, one test.
 
-   @router.get("/notebooks/{notebookId}/search")
-   async def search_notebook(*, notebook_id: NotebookId, q: str = "", exact: str = "false",
-                             _: CurrentUser, notebooks: NotebookRepository = Depends()) -> dict:
-       if not await notebooks.notebook_exists(notebook_id):
-           raise HTTPException(404, "Notebook not found.")
-       return EMPTY_SEARCH
+### Step 1. The two stub routes
 
-   @router.get("/notebooks/{notebookId}/search/threads")
-   async def search_chat_threads(...) -> dict:   # same body
-   ```
-   Make sure the router is included in `app/main.py` (see `routers.py`).
+**File:** `src/search/search_router.py`
 
-   **DONE WHEN:** both routes print the empty result:
+Both routes check the Notebook, then answer the same empty shape:
 
-   ```sh
-   curl -b cookies.txt "localhost:3000/notebooks/<nb>/search?q=hello"
-   curl -b cookies.txt "localhost:3000/notebooks/<nb>/search/threads?q=hello"
-   # both print: {"correctedQuery":null,"words":[],"total":0,"results":[]}
-   ```
+```python
+router = APIRouter(tags=["search"])
 
-2. **Delete the unused entities** `src/search/citation_entity.py` and `src/search/keyword_entity.py`
-   (see T02); keep `search_dto.py` only if something imports it.
+NotebookId = Annotated[uuid.UUID, Path(alias="notebookId")]
+Notebooks = Annotated[NotebookRepository, Depends()]
 
-   **DONE WHEN:** the search prints nothing:
+EMPTY_SEARCH = {"correctedQuery": None, "words": [], "total": 0, "results": []}
 
-   ```sh
-   grep -rn "citation_entity\|keyword_entity" src
-   ```
 
-3. **One test** in `test/test_search_route.py`: sign in, create a Notebook, `GET .../search?q=x`
-   is 200 with `total == 0`; an unknown Notebook id is 404.
+@router.get("/notebooks/{notebookId}/search")
+async def search_notebook(
+    *, notebook_id: NotebookId, q: str = "", exact: str = "false", _: CurrentUser, notebooks: Notebooks
+) -> dict:
+    if not await notebooks.notebook_exists(notebook_id):
+        raise HTTPException(404, "Notebook not found.")
+    return EMPTY_SEARCH
 
-   **DONE WHEN:** the test file is green:
 
-   ```sh
-   uv run pytest test/test_search_route.py -q
-   ```
+@router.get("/notebooks/{notebookId}/search/threads")
+async def search_chat_threads(...) -> dict:
+    ...  # same parameters, same body
+```
+
+Make sure the router is included in `app/main.py` (see `routers.py`).
+
+**DONE WHEN:** both routes print the empty result:
+
+```sh
+curl -b cookies.txt "localhost:3000/notebooks/<nb>/search?q=hello"
+curl -b cookies.txt "localhost:3000/notebooks/<nb>/search/threads?q=hello"
+```
+
+```json
+{"correctedQuery":null,"words":[],"total":0,"results":[]}
+```
+
+![img_104.png](screenshots/img_104.png)
+![img_105.png](screenshots/img_105.png)
+
+
+### Step 2. Delete the unused entities
+
+**Delete** `src/search/citation_entity.py` and `src/search/keyword_entity.py` (see T02). Keep
+`search_dto.py` only if something imports it.
+
+**DONE WHEN:** the search prints nothing:
+
+```sh
+grep -rn "citation_entity\|keyword_entity" src
+```
+
+![img_106.png](screenshots/img_106.png)
+
+
+### Step 3. One test
+
+**File:** `test/test_search_route.py`
+
+1. Sign in and create a Notebook.
+2. `GET .../search?q=x` answers 200 with `total == 0`.
+3. An unknown Notebook id answers 404.
+
+**DONE WHEN:** the test file is green:
+
+```sh
+uv run pytest test/test_search_route.py -q
+```
+
+![img_107.png](screenshots/img_107.png)
 
 ## If you pick it up later
 
 `GET /notebooks/{nb}/search?q=&exact=` is full-text search over the Chunks of each Document's
 latest `ready` Version, with typo correction against the Notebook's word list (NOTEBOOKS
-`docs/search.md`). It needs no OpenRouter key.
+`docs/search.md`). It needs no OpenRouter key. The reference folder
+`BACKEND/reference-backend/src/search/` can be copied as is; this is what it contains.
 
-1. DTOs: `TextSegment` (`text`, `match`), `SearchMatch` (`versionId`, `chunkId`, `charStart`, `charEnd`),
-   `DocumentSearchResult` (`documentId`, `filename`, `title`, `headingPath`, `match`, `excerpt`).
-2. `search/keywords.py`: `TEXT_SEARCH_CONFIG = "simple_unaccent"`, the private-use delimiters for
-   `ts_headline`, `segments(headline)`, `excerpt(headline, source)`, `names_a_word(db, query)`.
-3. `search/plain_text.py::plain_text(markdown)`: strip Markdown markers for the excerpt.
-4. `search/correction.py`: `correct(db, notebook_id, query)` over `notebook_words` with `%` and
-   `similarity() >= 0.4`; `searched_words(query)`.
-5. `search/search_repository.py::search_chunks(notebook_id, query, typed)`: the `SEARCH_CHUNKS_SQL`
-   over `searchable_versions`, ordered "matched as typed first, then rank", `COUNT(*) OVER ()`,
-   limit 20; one `ts_headline` query over the plain texts; ranges from `chunk_ranges`.
-6. Tests: seed a `ready` Version with one chunk and a `chunk_ranges` row; `etretat` finds
-   `Étretat`; `famus` is corrected to `famous`; `exact=true` is not.
+| Piece | File | What it does |
+| --- | --- | --- |
+| DTOs | `search_dto.py` | `TextSegment` (`text`, `match`), `SearchMatch` (`versionId`, `chunkId`, `charStart`, `charEnd`), `DocumentSearchResult` (`documentId`, `filename`, `title`, `headingPath`, `match`, `excerpt`) |
+| Headlines | `keywords.py` | `TEXT_SEARCH_CONFIG = "simple_unaccent"`, the private-use delimiters for `ts_headline`, `segments(headline)`, `excerpt(headline, source)`, `names_a_word(db, query)` |
+| Plain text | `plain_text.py` | `plain_text(markdown)` strips Markdown markers for the excerpt |
+| Typo correction | `correction.py` | `correct(db, notebook_id, query)` over `notebook_words` with `%` and `similarity() >= 0.4`; `searched_words(query)` |
+| Repository | `search_repository.py` | `search_chunks(notebook_id, query, typed)`: `SEARCH_CHUNKS_SQL` over `searchable_versions`, ordered "matched as typed first, then rank", `COUNT(*) OVER ()`, limit 20; one `ts_headline` query over the plain texts; ranges from `chunk_ranges` |
 
-Reference: `BACKEND/reference-backend/src/search/` (the whole folder can be copied as is);
-Node `apps/backend/src/search/`; `docs/search.md`.
+**Tests to bring with it.** Seed a `ready` Version with one chunk and a `chunk_ranges` row,
+then check three things:
+
+- `etretat` finds `Étretat` (accents are folded);
+- `famus` is corrected to `famous`;
+- with `exact=true`, it is not.
+
+### References
+
+- Python: `BACKEND/reference-backend/src/search/`.
+- Node: `apps/backend/src/search/`; NOTEBOOKS `docs/search.md`.

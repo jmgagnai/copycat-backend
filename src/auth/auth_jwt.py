@@ -10,7 +10,7 @@ JWT_TTL = timedelta(days=7)
 
 def sign_session_token(user_id: str) -> str:
     now = datetime.now(UTC)
-    return jwt.encode(
+    return jwt.encode(  # pyright: ignore[reportUnknownMemberType]
         {"sub": user_id, "iat": now, "exp": now + JWT_TTL},
         JWT_SECRET,
         algorithm=JWT_ALG,
@@ -19,7 +19,9 @@ def sign_session_token(user_id: str) -> str:
 
 def verify_session_token(token: str) -> str | None:
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        payload = jwt.decode(  # pyright: ignore[reportUnknownMemberType]
+            token, JWT_SECRET, algorithms=[JWT_ALG]
+        )
     except jwt.PyJWTError:
         return None
     sub = payload.get("sub")

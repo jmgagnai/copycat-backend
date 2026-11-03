@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="700" viewBox="0 0 1640 700" font-family="Helvetica, Arial, sans-serif">
+<title>copycat-backend document lifecycle</title>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker><marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/></marker></defs>
+<rect width="1640" height="700" fill="#ffffff"/>
+<text x="40" y="42" font-size="22" font-weight="bold" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Document Version lifecycle · upload to `ready`</text>
+<text x="40" y="64" font-size="11.5" font-weight="normal" fill="#6b7280" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Each arrow between statuses is one set_version_status() call: UPDATE document_versions + pg_notify(&#x27;app_events&#x27;) in the same commit, so the browser&#x27;s badge follows the exact state the database holds.</text>
+<rect x="40" y="100" width="360" height="115" rx="6" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="50" y="122" font-size="12" font-weight="bold" fill="#1d4ed8" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Route · POST /notebooks/{nb}/documents</text>
+<text x="50" y="140.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">validates type (file_types.py) and size</text>
+<text x="50" y="156.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">put_object → MinIO</text>
+<text x="50" y="172.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">INSERT documents / document_versions</text>
+<text x="50" y="188.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">commit, then enqueue Stage 1</text>
+<rect x="440" y="100" width="360" height="115" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="450" y="122" font-size="12" font-weight="bold" fill="#b45309" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Stage 1 · convert_to_markdown</text>
+<text x="450" y="140.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">get_object → temp dir</text>
+<text x="450" y="156.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">docker run docling → converted.md</text>
+<text x="450" y="172.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">looks_scanned? → no-text-layer</text>
+<text x="450" y="188.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">store markdown, converted_at</text>
+<rect x="840" y="100" width="360" height="115" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="850" y="122" font-size="12" font-weight="bold" fill="#b45309" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Stage 2 · summarize_document</text>
+<text x="850" y="140.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">without_embedded_pictures()</text>
+<text x="850" y="156.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">split_markdown_sections()</text>
+<text x="850" y="172.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">metadata → snippet → exec. summary → abstract</text>
+<text x="850" y="188.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">store 4 artifacts, summarized_at</text>
+<rect x="1240" y="100" width="360" height="115" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="1250" y="122" font-size="12" font-weight="bold" fill="#b45309" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Stage 3 · embed_chunks</text>
+<text x="1250" y="140.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">chunk_markdown() → DocumentChunk[]</text>
+<text x="1250" y="156.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">embed in batches of 32</text>
+<text x="1250" y="172.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">replace chunks + chunk_ranges (one tx)</text>
+<text x="1250" y="188.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">indexed_at</text>
+<rect x="40" y="228" width="360" height="24" rx="12.0" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="220.0" y="243.5" font-size="10.5" font-weight="bold" fill="#4b5563" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">MinIO · put</text>
+<rect x="440" y="228" width="360" height="24" rx="12.0" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="620.0" y="243.5" font-size="10.5" font-weight="bold" fill="#4b5563" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">MinIO · get  +  Docker: Docling container</text>
+<rect x="840" y="228" width="360" height="24" rx="12.0" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="1020.0" y="243.5" font-size="10.5" font-weight="bold" fill="#4b5563" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">OpenRouter · chat/completions ×4</text>
+<rect x="1240" y="228" width="360" height="24" rx="12.0" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="1420.0" y="243.5" font-size="10.5" font-weight="bold" fill="#4b5563" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">OpenRouter · embeddings → pgvector</text>
+<rect x="40" y="320" width="180" height="36" rx="18.0" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="130.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#b45309" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">queued</text>
+<rect x="270" y="320" width="180" height="36" rx="18.0" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="360.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#b45309" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">converting</text>
+<rect x="500" y="320" width="180" height="36" rx="18.0" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="590.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#b45309" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">converted</text>
+<rect x="730" y="320" width="180" height="36" rx="18.0" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="820.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#b45309" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">summarizing</text>
+<rect x="960" y="320" width="180" height="36" rx="18.0" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="1050.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#b45309" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">summarized</text>
+<rect x="1190" y="320" width="180" height="36" rx="18.0" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="1280.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#b45309" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">indexing</text>
+<rect x="1420" y="320" width="180" height="36" rx="18.0" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+<text x="1510.0" y="342.1666666666667" font-size="12.5" font-weight="bold" fill="#15803d" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">ready</text>
+<path d="M220,338 L270,338" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M450,338 L500,338" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M680,338 L730,338" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M910,338 L960,338" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1140,338 L1190,338" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1370,338 L1420,338" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="265" y="312" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">route commits</text>
+<text x="495" y="312" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">Stage 1 ok</text>
+<text x="725" y="312" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">Stage 2 starts</text>
+<text x="955" y="312" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">Stage 2 ok</text>
+<text x="1185" y="312" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">Stage 3 starts</text>
+<text x="1415" y="312" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">Stage 3 ok</text>
+<text x="130" y="376" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">Stage 1 sets `converting`</text>
+<text x="590" y="376" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">enqueue Stage 2 (after commit)</text>
+<text x="1050" y="376" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">enqueue Stage 3 (after commit)</text>
+<text x="1510" y="376" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">the only status chat may rely on</text>
+<rect x="730" y="450" width="180" height="36" rx="18.0" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="820.0" y="472.1666666666667" font-size="12.5" font-weight="bold" fill="#4b5563" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">failed</text>
+<path d="M360,356 L360,420 L820,420 L820,450" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="5 4"/>
+<path d="M820,356 L820,420 L820,420 L820,450" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="5 4"/>
+<path d="M1280,356 L1280,420 L820,420 L820,450" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="5 4"/>
+<text x="820" y="414" font-size="10" font-weight="normal" fill="#6b7280" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">any exception while converting / summarizing / indexing</text>
+<text x="930" y="458" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">failure_reason: no-text-layer · unreadable · timed-out (Stage 1, typed) · unexpected (anything else, incl. LLM errors) · service-unavailable is in the contract but never produced</text>
+<text x="930" y="473" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">failed_at: converting · summarizing · indexing   (both NULL unless status = failed)</text>
+<text x="930" y="488" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Recorded on every attempt, then re-raised: procrastinate retries up to 4 attempts (10 / 20 / 40 s).</text>
+<text x="930" y="503" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">No Retry route (T14 dropped): re-uploading the same filename adds a new Version and starts over.</text>
+<rect x="40" y="560" width="1560" height="95" rx="6" fill="#fce7f3" stroke="#be185d" stroke-width="1.5"/>
+<text x="50" y="582" font-size="12" font-weight="bold" fill="#be185d" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Live status in the browser · the same path for every arrow above</text>
+<text x="50" y="600.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">set_version_status()  →  SELECT pg_notify(&#x27;app_events&#x27;, {type: document-version-status-changed, topic: notebook:{id}, data: {notebookId, documentId, versionId, filename, status, failure?}})  →  COMMIT</text>
+<text x="50" y="617.5" font-size="10.5" font-weight="normal" fill="#1f2937" text-anchor="start" font-family="Helvetica, Arial, sans-serif">→ AppEventSubscriber (LISTEN)  →  asyncio.Queue of each open GET /events  →  SSE frame  →  EventSource `message`  →  Angular updates the Document badge</text>
+<text x="50" y="634.5" font-size="10.5" font-weight="normal" fill="#6b7280" text-anchor="start" font-family="Helvetica, Arial, sans-serif">Stages 2 and 3 only run when OPENROUTER_API_KEY is set; without it the worker skips their queues and a Document rests at `converted` with its jobs left `todo`.</text>
+</svg>

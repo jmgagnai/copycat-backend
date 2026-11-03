@@ -8,10 +8,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from storage import S3Storage
+from storage import StoredObject
 
 from .docling import MarkdownConverter, markdown_output_path
 from .stage import (
@@ -22,10 +23,16 @@ from .stage import (
 )
 
 
+class ObjectStore(Protocol):
+    """The one thing Stage 1 needs from storage; S3Storage and the tests' fake both fit."""
+
+    async def get_object(self, key: str) -> StoredObject: ...
+
+
 @dataclass
 class ConvertToMarkdownDeps:
     db: AsyncSession
-    storage: S3Storage
+    storage: ObjectStore
     convert_to_markdown: MarkdownConverter
     # Hands the Version to Stage 2; a plain callback, so tests pass a list-appending fake.
     enqueue_summarize_document: (

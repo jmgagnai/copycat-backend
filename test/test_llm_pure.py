@@ -1,6 +1,6 @@
 """T11 step 5: no database, no network."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 import httpx
 import pytest
@@ -62,7 +62,7 @@ async def test_with_retries_recovers_then_gives_up() -> None:
     assert calls == 2
 
 
-def _client(handler) -> OpenRouterClient:
+def _client(handler: Callable[[httpx.Request], httpx.Response]) -> OpenRouterClient:
     return OpenRouterClient(
         "k",
         http=httpx.AsyncClient(transport=httpx.MockTransport(handler)),

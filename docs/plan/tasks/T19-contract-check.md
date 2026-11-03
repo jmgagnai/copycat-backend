@@ -31,8 +31,17 @@ uv run python main.py            # must say it listens on :3000
 pnpm frontend:dev                 # opens http://localhost:4200
 ```
 
-CORS in T01: `CORSMiddleware(allow_origin_regex=".*", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])`.
-Without `allow_credentials` the auth cookie is never sent and every call after login is 401.
+CORS is set up in T01. Without `allow_credentials` the auth cookie is never sent and every call
+after login is 401:
+
+```python
+CORSMiddleware(
+    allow_origin_regex=".*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
 
 ### 2. Reading the browser
 
@@ -52,49 +61,78 @@ so a page reload does not clear it.
 | Every request 401 after login | cookie not set or not sent | check `Set-Cookie` on the login response and the CORS credentials flag |
 | Status badge never moves | `/events` not streaming | `curl -N -b cookies.txt localhost:3000/events` must print `: connected` immediately |
 
-Try it: `curl -i -c cookies.txt -X POST localhost:3000/auth/login -H 'content-type: application/json' -d '{"email":"a@b.c","password":"wrong"}'`
-must print `401` and a body of exactly `{"message":"..."}`.
+Try it. This must print `401` and a body of exactly `{"message":"..."}`:
+
+```sh
+curl -i -c cookies.txt -X POST localhost:3000/auth/login \
+  -H 'content-type: application/json' -d '{"email":"a@b.c","password":"wrong"}'
+```
 
 ## What to do
 
-Run the frontend against this backend and walk this list with DevTools open. For each step the
-**DONE WHEN** is what you must see.
+Run the frontend against this backend and walk the eight steps below with DevTools open, the
+Network tab filtered on `Fetch/XHR`. Each step says what to do in the UI, then what you must see
+for it to count as done. Fix every mismatch before moving on; most are a missing alias or a
+`detail` body, both found with the table above.
 
-1. **Register, log out, log in.**
+### Step 1. Register, log out, log in
 
-   **DONE WHEN:** the Network tab shows `POST /auth/register` 201, `POST /auth/logout` 204,
-   `POST /auth/login` 200 with a `Set-Cookie` header, and `GET /auth/me` 200.
-2. **Create a Notebook, rename it, see it in the list.**
+**DONE WHEN** the Network tab shows, in this order:
 
-   **DONE WHEN:** the list shows the new title after a page reload, and `GET /notebooks` returns
-   `createdAt` in camelCase.
-3. **Upload a PDF and watch the badge.**
+| Request | Status | Also check |
+| --- | --- | --- |
+| `POST /auth/register` | 201 | |
+| `POST /auth/logout` | 204 | |
+| `POST /auth/login` | 200 | a `Set-Cookie` header on the response |
+| `GET /auth/me` | 200 | |
 
-   **DONE WHEN:** the status moves `queued` → `converting` → `converted` → `summarizing` →
-   `summarized` → `embedding` → `ready` without reloading (T06), and `/events` in the Network tab
-   stays pending with growing size.
-4. **Open the Document.**
+### Step 2. Create a Notebook, rename it, see it in the list
 
-   **DONE WHEN:** Abstract and Executive Summary are shown and non-empty; the download button
-   gives a file of the same size as the one uploaded (`ls -l` both).
-5. **Upload the same file again, delete, restore.**
+**DONE WHEN:**
 
-   **DONE WHEN:** the Document shows version 2; after delete it leaves the list; after restore it
-   is back with version 2 still current.
-6. **Create a Thread and ask a question.**
+- the list shows the new title after a page reload;
+- `GET /notebooks` returns `createdAt` in camelCase.
 
-   **DONE WHEN:** paragraphs appear one by one before the full answer, `[n]` markers render as
-   links, and clicking one opens the right Document at the cited passage. `POST .../messages`
-   answers 201 with `question` and `answer`.
-7. **Search.**
+### Step 3. Upload a PDF and watch the badge
 
-   **DONE WHEN:** the search box answers "no results" and the Console shows no error (T17 stub).
-8. **Retry on a failed Document** (stop the Docling container, upload, start it again).
+**DONE WHEN:**
 
-   **DONE WHEN:** the Retry button shows an error toast and nothing else breaks (T14 dropped).
+- the status moves through every stage without a reload (T06):
+  `queued`, `converting`, `converted`, `summarizing`, `summarized`, `indexing`, `ready`;
+- `/events` in the Network tab stays pending with a growing size.
 
-Fix every mismatch found before moving to the next step; most are a missing alias or a `detail`
-body, both found with the table above.
+### Step 4. Open the Document
+
+**DONE WHEN:**
+
+- the Abstract and the Executive Summary are shown and non-empty;
+- the download button gives a file of the same size as the one uploaded (`ls -l` both).
+
+### Step 5. Upload the same file again, delete, restore
+
+**DONE WHEN:**
+
+- the Document shows version 2;
+- after delete it leaves the list;
+- after restore it is back, with version 2 still current.
+
+### Step 6. Create a Thread and ask a question
+
+**DONE WHEN:**
+
+- paragraphs appear one by one before the full answer;
+- `[n]` markers render as links, and clicking one opens the right Document at the cited passage;
+- `POST .../messages` answers 201 with `question` and `answer`.
+
+### Step 7. Search
+
+**DONE WHEN:** the search box answers "no results" and the Console shows no error (T17 stub).
+
+### Step 8. Retry on a failed Document
+
+Stop the Docling container, upload a file, start the container again.
+
+**DONE WHEN:** the Retry button shows an error toast and nothing else breaks (T14 dropped).
 
 ## Acceptance
 

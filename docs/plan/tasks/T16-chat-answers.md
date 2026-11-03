@@ -37,7 +37,12 @@ def to_vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(repr(x) for x in vector) + "]"
 ```
 
-Try it: `psql postgresql://rag_notebook:rag_notebook@localhost:5432/reference_backend_test -c "SELECT 1 - (CAST('[1,0]' AS vector) <=> CAST('[0,1]' AS vector))"` prints `0`.
+Try it, the output is `0`:
+
+```sh
+psql postgresql://rag_notebook:rag_notebook@localhost:5432/rag_notebook \
+  -c "SELECT 1 - (CAST('[1,0]' AS vector) <=> CAST('[0,1]' AS vector))"
+```
 
 ### 2. Only search the right Versions
 
@@ -216,157 +221,311 @@ history.
 
 ## What to build
 
-1. **`chat/retrieval.py`: `RetrievedChunk` and `retrieve_chunks`.** A frozen dataclass with
-   `chunk_id`, `document_id`, `document_version_id`, `filename`, `heading_path: list[str]`, `text`,
-   `chat_snippet: str | None`, `similarity: float`, and the function of tutorial item 2, default
-   `limit=12`. Convert `heading_path` with `list(row.heading_path)` and `similarity` with `float()`.
+Seven steps, in dependency order: retrieval, Citations, streaming, the service that ties them
+together, the route, the lifespan wiring, and the tests. Each step says what it is for, what to
+write, and how you know it is done.
 
-   **DONE WHEN:** a test seeds one `ready` Version with one chunk (T13's test seed, zero vector
-   is fine) and retrieval returns that chunk with `similarity` close to 0; a Version in status
-   `embedding` returns nothing:
+```text
+question ──embed──▶ retrieve_chunks ──▶ build prompt ──▶ deps.stream ──▶ AnswerChunker
+                         (step 1)         (step 4)         (T11)           (step 3)
+                                                                              │ paragraphs
+                                                                              ▼
+   SendChatMessageResponse ◀── append_question_and_answer ◀── resolve + locate   AnswerStream
+          (step 5)                      (T15)                   (step 2)        (step 3, T06 bus)
+```
 
-   ```python
-   chunks = await retrieve_chunks(db, notebook_id, [0.0] * 2560)
-   assert len(chunks) == 1 and abs(chunks[0].similarity) < 1e-6
-   ```
+### Step 1. Retrieval
 
-2. **`chat/citations.py`: markers in, Citations out.** `ResolvedCitation(marker, chunk, char_start=None,
-   char_end=None)` as a frozen dataclass; `CITATION_INSTRUCTIONS`, the two prompt bullets that ask
-   for `[n]` after every factual sentence and forbid invented markers; `resolve_citation_markers(answer,
-   chunks)` returning one Citation per distinct marker, sorted; `locate_citations(db, citations)`:
-   ```python
-   rows = await db.execute(
-       text(
-           "SELECT chunk_id, char_start, char_end FROM chunk_ranges WHERE chunk_id = ANY(CAST(:ids AS uuid[]))"
-       ),
-       {"ids": [c.chunk.chunk_id for c in citations]},
-   )
-   ```
+**File:** `chat/retrieval.py`
 
-   **DONE WHEN:** marker resolution keeps the markers that name a chunk, in order, and after
-   `locate_citations` a chunk with a `chunk_ranges` row has integer `char_start` and `char_end`:
+```python
+@dataclass(frozen=True)
+class RetrievedChunk:
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_version_id: uuid.UUID  # the Version retrieval chose; a Citation pins it
+    filename: str
+    heading_path: list[str]
+    text: str
+    chat_snippet: str | None  # T12's artifact written for a model
+    similarity: float  # 1 - cosine distance
 
-   ```python
-   citations = resolve_citation_markers("A [2]. B [1, 2]. C [9][0].", [c1, c2])
-   assert [c.marker for c in citations] == [1, 2]
-   assert citations[1].chunk is c2
-   ```
 
-3. **`chat/streaming.py`: `AnswerChunker` and `AnswerStream`.** The chunker of tutorial item 5
-   (also normalise `\r\n` to `\n`). `AnswerStream(db, notebook_id, thread_id)` holds a fresh
-   `streamId`, an `index` counter and the identity dict; `chunk(text)`, `completed(message_id,
-   question_id, citations)` and `failed(reason)` each publish one event and commit. Serialise
-   Citations with `c.model_dump(by_alias=True, mode="json")` so UUIDs become strings.
+async def retrieve_chunks(
+    db: AsyncSession,
+    notebook_id: uuid.UUID,
+    query_embedding: list[float],
+    limit: int = 12,
+) -> list[RetrievedChunk]: ...
+```
 
-   **DONE WHEN:** the chunker test of item 5 passes, and in a test with a real `db` publishing a
-   chunk and then querying raises nothing (the event payload is below Postgres' 8000-byte limit
-   for a paragraph):
+The query is the one of tutorial item 2: T08's `searchable_versions` CTE joined to `chunks`,
+ordered by cosine distance. Convert `heading_path` with `list(row.heading_path)` and
+`similarity` with `float()`.
 
-   ```python
-   await AnswerStream(db, notebook_id, thread_id).chunk("hi")
-   await db.execute(text("SELECT 1"))
-   ```
+**DONE WHEN:** a test seeds one `ready` Version with one chunk and retrieval returns it with
+`similarity` close to 0; a Version that is not `ready` returns nothing. Seed the chunk with a
+unit vector and query with an orthogonal one: pgvector's cosine distance between two zero
+vectors is `NaN`, not 0, so the all-zero embedding of T13's test cannot be used here.
 
-4. **`chat/chat_service.py`: `ChatDeps`, the prompt, `stream_answer`.** `ChatDeps` of item 8;
-   `NO_SOURCES_ANSWER`, a fixed sentence the application says when nothing was retrieved;
-   `CHAT_SYSTEM_PROMPT` including `CITATION_INSTRUCTIONS`; `format_sources` and `format_history`;
-   then:
-   ```python
-   async def stream_answer(
-       db, deps, notebook_id, question, history, on_chunk
-   ) -> GroundedAnswer:
-       (query_embedding,) = await deps.embed([question])
-       chunks = await retrieve_chunks(db, notebook_id, query_embedding)
-       if not chunks:
-           await on_chunk(NO_SOURCES_ANSWER)
-           return GroundedAnswer(NO_SOURCES_ANSWER, [])
-       request = ChatCompletionRequest(
-           deps.model, CHAT_SYSTEM_PROMPT, build_user_turn(chunks, history, question)
-       )
-       chunker, text = AnswerChunker(), ""
-       async for delta in deps.stream(request):
-           text += delta
-           for piece in chunker.push(delta):
-               await on_chunk(piece)
-       for piece in chunker.flush():
-           await on_chunk(piece)
-       if not text.strip():
-           raise RuntimeError("The model returned no content.")
-       return GroundedAnswer(
-           text, await locate_citations(db, resolve_citation_markers(text, chunks))
-       )
-   ```
-   `on_chunk` is `Callable[[str], Awaitable[None]]`, which is `AnswerStream.chunk` in the route and a
-   list-appending coroutine in tests. Raise on failure so the route records nothing.
+```python
+chunks = await retrieve_chunks(db, notebook_id, unit_vector(1))  # chunk is on axis 0
+assert len(chunks) == 1 and abs(chunks[0].similarity) < 1e-6
+```
 
-   **DONE WHEN:** with `fake_stream` yielding `"Para one [1].\n\nPara two."` and one seeded chunk,
-   `stream_answer` calls `on_chunk` twice and returns one Citation for marker 1; with no seeded
-   chunk it returns `NO_SOURCES_ANSWER` without calling `deps.stream` (make the fake raise if called).
+![img_95.png](screenshots/img_95.png)
 
-5. **The route in `chat/chat_router.py`.** Replace T15's 503 placeholder on
-   `POST /notebooks/{notebookId}/threads/{threadId}/messages` (status 201, `SendChatMessageResponse`):
-   ```python
-   thread = await repo.find_chat_thread(notebook_id, thread_id)
-   if thread is None:
-       raise HTTPException(404, "Chat Thread not found.")
-   if chat is None:
-       raise HTTPException(
-           503, "Chat is not configured on this server: OPENROUTER_API_KEY is not set."
-       )
-   history = await repo.list_chat_messages(thread.id)
-   stream = AnswerStream(db, thread.notebook_id, thread.id)
-   try:
-       answer = await stream_answer(
-           db, chat, thread.notebook_id, body.content, history, stream.chunk
-       )
-   except Exception as err:
-       log.exception("A chat answer could not be generated.")
-       await stream.failed(str(err))
-       raise HTTPException(
-           502,
-           "The answer could not be generated. Nothing was recorded; please ask again.",
-       ) from None
-   question, recorded = await repo.append_question_and_answer(
-       thread.id, user.id, body.content, answer.text, answer.citations
-   )
-   await stream.completed(recorded.id, question.id, recorded.citations)
-   return SendChatMessageResponse(question=question, answer=recorded)
-   ```
-   `chat: ChatDeps | None = Depends(get_chat_deps)` and `db: AsyncSession = Depends(get_db)` are
-   route parameters; the same session is used by the repository, the stream and retrieval.
 
-   **DONE WHEN:** asking answers 404 for an unknown Thread, 503 with no key, and 201
-   `{"question": {...}, "answer": {...}}` with a fake:
 
-   ```sh
-   curl -b cookies.txt -X POST localhost:3000/notebooks/<nb>/threads/<thread>/messages \
-     -H 'content-type: application/json' -d '{"content":"hi"}'
-   ```
+### Step 2. Citations: markers in, Citations out
 
-6. **Lifespan wiring in `app/main.py`.** After T11's client and embedder are built:
-   ```python
-   app.state.chat = (
-       ChatDeps(client.stream, embed, task_models.chat_answer)
-       if client and embed
-       else None
-   )
-   ```
+**File:** `chat/citations.py` (T15 created it with only the dataclass)
 
-   **DONE WHEN:** starting the server with `OPENROUTER_API_KEY` set logs no error and
-   `GET /notebooks/{nb}/threads/{t}/messages` still works; without the key, asking answers 503.
+```python
+@dataclass(frozen=True)
+class ResolvedCitation:
+    marker: int
+    chunk: RetrievedChunk
+    char_start: int | None = None
+    char_end: int | None = None
 
-7. **Tests, one per pattern.** In `test/test_chat_pure.py`: marker resolution (step 2) and the
-   chunker (step 3), no database. In `test/test_chat_route.py`: 503 without deps; then set
-   `app.state.chat = ChatDeps(stream=fake_stream, embed=fake_embed, model="m")` on the app the
-   client wraps, ask in a Notebook with no `ready` Document, and assert 201, the answer content is
-   `NO_SOURCES_ANSWER`, both rows carry the asker and `citations == []`, and
-   `GET .../messages` lists roles `["user", "assistant"]`.
 
-   **DONE WHEN:** both test files are green in under five seconds:
+CITATION_INSTRUCTIONS: (
+    str  # the two prompt bullets: "[n]" after every factual sentence,
+)
+# never an invented marker
 
-   ```sh
-   uv run pytest test/test_chat_pure.py test/test_chat_route.py -q
-   ```
+MARKER_GROUP = re.compile(r"\[\s*(\d{1,3}(?:\s*,\s*\d{1,3})*)\s*\]")
+
+
+def resolve_citation_markers(
+    answer: str, chunks: list[RetrievedChunk]
+) -> list[ResolvedCitation]: ...
+
+
+async def locate_citations(
+    db: AsyncSession, citations: list[ResolvedCitation]
+) -> list[ResolvedCitation]: ...
+```
+
+- `resolve_citation_markers` returns one Citation per distinct marker that names a chunk,
+  sorted by marker (tutorial item 7). `[9]` with three chunks is ignored.
+- `locate_citations` fills `char_start` and `char_end` from `chunk_ranges` in one query, with
+  `dataclasses.replace` on each frozen Citation. A chunk with no row keeps its nulls:
+
+  ```sql
+  SELECT chunk_id, char_start, char_end
+  FROM chunk_ranges
+  WHERE chunk_id = ANY(CAST(:ids AS uuid[]))
+  ```
+
+  bound with `{"ids": [c.chunk.chunk_id for c in citations]}`.
+
+**DONE WHEN:** marker resolution keeps the markers that name a chunk, in order:
+
+```python
+citations = resolve_citation_markers("A [2]. B [1, 2]. C [9][0].", [c1, c2])
+assert [c.marker for c in citations] == [1, 2]
+assert citations[1].chunk is c2
+```
+
+and after `locate_citations` a chunk with a `chunk_ranges` row has integer `char_start` and
+`char_end`.
+
+![img_96.png](screenshots/img_96.png)
+![img_97.png](screenshots/img_97.png)
+
+### Step 3. Streaming: paragraphs, then events
+
+**File:** `chat/streaming.py`
+
+```python
+class AnswerChunker:
+    """Tutorial item 5, plus: normalise "\\r\\n" to "\\n" before splitting."""
+
+    def push(self, delta: str) -> list[str]: ...
+    def flush(self) -> list[str]: ...
+
+
+class AnswerStream:
+    """One answer's events on the Notebook's topic (T06), under one fresh `streamId`."""
+
+    def __init__(
+        self, db: AsyncSession, notebook_id: uuid.UUID, thread_id: uuid.UUID
+    ): ...
+
+    async def chunk(
+        self, text: str
+    ) -> None: ...  # chat-answer-chunk: streamId, index, text
+    async def completed(  # chat-answer-completed: messageId,
+        self,
+        message_id,
+        question_id,
+        citations,  #   questionId, citations
+    ) -> None: ...
+    async def failed(self, reason: str) -> None: ...  # chat-answer-failed: reason
+```
+
+- `AnswerStream` holds the `streamId`, an `index` counter, and the identity dict
+  (`notebookId`, `threadId`, `streamId`) every event carries.
+- Each of the three methods publishes one event through `publish_app_event` and commits.
+- Serialise Citations with `c.model_dump(by_alias=True, mode="json")`, so UUIDs become strings.
+
+**DONE WHEN:** the chunker test of tutorial item 5 passes, and in a test with a real `db`,
+publishing a chunk and then querying raises nothing (a paragraph stays below Postgres'
+8000-byte `pg_notify` limit):
+
+```python
+await AnswerStream(db, notebook_id, thread_id).chunk("hi")
+await db.execute(text("SELECT 1"))
+```
+
+![img_98.png](screenshots/img_98.png)
+
+### Step 4. The service: from a question to a grounded answer
+
+**File:** `chat/chat_service.py`
+
+```python
+@dataclass
+class ChatDeps:  # tutorial item 8; built once in the lifespan
+    stream: ChatStreamer
+    embed: Embedder
+    model: str
+
+
+@dataclass(frozen=True)
+class GroundedAnswer:
+    text: str
+    citations: list[ResolvedCitation]
+
+
+NO_SOURCES_ANSWER: str  # the fixed sentence said when nothing was retrieved
+CHAT_SYSTEM_PROMPT: str  # answer only from the sources, + CITATION_INSTRUCTIONS
+
+OnChunk = Callable[[str], Awaitable[None]]
+
+
+def format_sources(chunks: list[RetrievedChunk]) -> str: ...  # tutorial item 3
+def format_history(
+    history: list[ChatMessageResponse],
+) -> str: ...  # last 10, Question:/Answer:
+def build_user_turn(chunks, history, question) -> str: ...  # the three "##" sections
+
+
+async def stream_answer(
+    db: AsyncSession,
+    deps: ChatDeps,
+    notebook_id: uuid.UUID,
+    question: str,
+    history: list[ChatMessageResponse],
+    on_chunk: OnChunk,
+) -> GroundedAnswer: ...
+```
+
+`stream_answer`, in order:
+
+1. `(query_embedding,) = await deps.embed([question])`.
+2. `chunks = await retrieve_chunks(db, notebook_id, query_embedding)`.
+3. **Nothing retrieved:** `await on_chunk(NO_SOURCES_ANSWER)` and return
+   `GroundedAnswer(NO_SOURCES_ANSWER, [])`. The model is not called.
+4. Build `ChatCompletionRequest(deps.model, CHAT_SYSTEM_PROMPT, build_user_turn(chunks, history, question))`.
+5. Consume `deps.stream(request)` with `async for`, accumulating the full text and passing every
+   paragraph the `AnswerChunker` releases to `on_chunk`; then the `flush()` remainder.
+6. Empty text is a `RuntimeError("The model returned no content.")`: the route records nothing.
+7. Return `GroundedAnswer(text, await locate_citations(db, resolve_citation_markers(text, chunks)))`.
+
+`on_chunk` is `AnswerStream.chunk` in the route and a list-appending coroutine in tests.
+
+**DONE WHEN:**
+
+- with `fake_stream` yielding `"Para one [1].\n\nPara two."` and one seeded chunk,
+  `stream_answer` calls `on_chunk` twice and returns one Citation for marker 1;
+- with no seeded chunk it returns `NO_SOURCES_ANSWER` without calling `deps.stream` (make the
+  fake raise if called).
+
+![img_99.png](screenshots/img_99.png)
+
+### Step 5. The route
+
+**File:** `chat/chat_router.py`. Replace T15's 503 placeholder on
+`POST /notebooks/{notebookId}/threads/{threadId}/messages` (status 201, `SendChatMessageResponse`).
+
+Two new route parameters, resolved by FastAPI:
+
+```python
+db: Annotated[AsyncSession, Depends(get_db)]  # shared by repository, stream, retrieval
+chat: Annotated[
+    ChatDeps | None, Depends(get_chat_deps)
+]  # None without an OpenRouter key
+```
+
+The body, in order:
+
+1. `thread = await repo.find_chat_thread(notebook_id, thread_id)`; 404 `"Chat Thread not found."`
+   when `None`.
+2. 503 `"Chat is not configured on this server: OPENROUTER_API_KEY is not set."` when `chat` is
+   `None`.
+3. `history = await repo.list_chat_messages(thread.id)`. Read **before** writing: the question
+   must not appear in its own history (tutorial item 9).
+4. `stream = AnswerStream(db, thread.notebook_id, thread.id)`.
+5. In a `try`: `answer = await stream_answer(db, chat, thread.notebook_id, body.content, history, stream.chunk)`.
+   On any exception: `log.exception(...)`, `await stream.failed(str(err))`, then 502
+   `"The answer could not be generated. Nothing was recorded; please ask again."`.
+6. `question, recorded = await repo.append_question_and_answer(thread.id, user.id, body.content, answer.text, answer.citations)`.
+7. `await stream.completed(recorded.id, question.id, recorded.citations)`.
+8. `return SendChatMessageResponse(question=question, answer=recorded)`.
+
+**DONE WHEN:** asking answers 404 for an unknown Thread, 503 without a key, and 201
+`{"question": {...}, "answer": {...}}` with a fake:
+
+```sh
+curl -b cookies.txt -X POST localhost:3000/notebooks/<nb>/threads/<thread>/messages \
+  -H 'content-type: application/json' -d '{"content":"hi"}'
+```
+
+![img_100.png](screenshots/img_100.png)
+
+### Step 6. Lifespan wiring
+
+**File:** `app/main.py`, after T11's client and embedder are built:
+
+```python
+app.state.chat = (
+    ChatDeps(client.stream, embed, task_models.chat_answer)
+    if client and embed
+    else None
+)
+```
+
+**DONE WHEN:** with `OPENROUTER_API_KEY` set, the server starts without an error and
+`GET /notebooks/{nb}/threads/{t}/messages` still works; without the key, asking answers 503.
+
+![img_101.png](screenshots/img_101.png)
+
+![img_102.png](screenshots/img_102.png)
+
+### Step 7. Tests, one per pattern
+
+**Pure, in `test/test_chat_pure.py`:** marker resolution (step 2) and the chunker (step 3). No
+database.
+
+**Route, in `test/test_chat_route.py`:**
+
+1. Without deps, asking answers 503 (T15's test, kept).
+2. Set `app.state.chat = ChatDeps(stream=fake_stream, embed=fake_embed, model="m")` on the app
+   the client wraps, where `fake_embed` returns `[[0.0] * 2560]`.
+3. Ask in a Notebook with no `ready` Document. Assert 201, the answer content is
+   `NO_SOURCES_ANSWER`, both rows carry the asker, and `citations == []`.
+4. `GET .../messages` lists roles `["user", "assistant"]`.
+
+**DONE WHEN:** both files are green in under five seconds:
+
+```sh
+uv run pytest test/test_chat_pure.py test/test_chat_route.py -q
+```
+
+![img_103.png](screenshots/img_103.png)
 
 ## Acceptance
 

@@ -1,8 +1,10 @@
-"""T10 step 4 (and step 1's DONE WHEN). Runs on the T05 `db` fixture: everything is rolled back,
-and nothing here touches the job queue or Docker."""
+"""T10 step 4 (and step 1's DONE WHEN) and T12 step 5. Runs on the T05 `db` fixture: everything is
+rolled back, and nothing here touches the job queue, Docker or the network."""
 
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import text
@@ -19,17 +21,23 @@ from ingestion.stage import (
     load_version,
     set_version_status,
 )
+from ingestion.summarize_document import (
+    SummarizeDocumentDeps,
+    run_summarize_document_job,
+)
+from llm.models import TaskModels
+from llm.openrouter import ChatCompletionRequest
 from test.conftest import FakeStorage
 
 
 async def seed(db: AsyncSession, status: str = "queued") -> DocumentVersionRef:
     """A notebook, a document and one Version, by SQL: a Stage test must not depend on the routes."""
-    notebook_id = (
+    notebook_id: uuid.UUID = (
         await db.execute(
             text("INSERT INTO notebooks (title) VALUES ('N') RETURNING id")
         )
     ).scalar_one()
-    document_id = (
+    document_id: uuid.UUID = (
         await db.execute(
             text(
                 "INSERT INTO documents (notebook_id, filename) VALUES (:n, 'report.md') RETURNING id"
@@ -37,7 +45,7 @@ async def seed(db: AsyncSession, status: str = "queued") -> DocumentVersionRef:
             {"n": notebook_id},
         )
     ).scalar_one()
-    version_id = (
+    version_id: uuid.UUID = (
         await db.execute(
             text(
                 "INSERT INTO document_versions (document_id, version_number, mime_type, size_bytes, storage_key, ingestion_status)"
@@ -192,3 +200,95 @@ async def test_stage_1_skips_a_deleted_version(
     )
     assert not called
     assert (await version_row(db, ref.version_id))[0] == "queued"
+
+
+# T12 step 5
+SUMMARY_MARKDOWN = (
+    "# Report\n\n" + "Revenue grew 12% in 2024. " * 40 + "\n\n## Risks\n\nSome risks."
+)
+
+FAKE_MODELS = TaskModels(
+    metadata="meta",
+    chat_snippet="snippet",
+    executive_summary="exec",
+    abstract="abstract",
+)
+
+
+def scripted_completer() -> tuple[
+    Callable[[ChatCompletionRequest], Awaitable[str]], list[ChatCompletionRequest]
+]:
+    """Answers by model name, so one test can check which calls were made, in which order, and
+    what got stored."""
+    calls: list[ChatCompletionRequest] = []
+
+    async def complete(request: ChatCompletionRequest) -> str:
+        calls.append(request)
+        if request.model == "meta":
+            return '{"title": "Annual report", "authors": ["Ada"], "keywords": ["a"]}'
+        words = {"snippet": 150, "exec": 500, "abstract": 50}[request.model]
+        return " ".join(["word"] * words)
+
+    return complete, calls
+
+
+async def test_stage_2_stores_the_metadata_and_summaries_and_hands_over(
+    db: AsyncSession,
+) -> None:
+    ref = await seed(db, "converted")
+    await db.execute(
+        text("UPDATE document_versions SET markdown = :markdown WHERE id = :id"),
+        {"markdown": SUMMARY_MARKDOWN, "id": ref.version_id},
+    )
+    await db.commit()
+    complete, calls = scripted_completer()
+    enqueued: list[DocumentVersionRef] = []
+
+    async def enqueue_embed_chunks(ref: DocumentVersionRef) -> None:
+        enqueued.append(ref)
+
+    await run_summarize_document_job(
+        SummarizeDocumentDeps(
+            db, complete, FAKE_MODELS, enqueue_embed_chunks=enqueue_embed_chunks
+        ),
+        ref,
+    )
+
+    row = (
+        await db.execute(
+            text(
+                "SELECT ingestion_status, metadata, chat_snippet, executive_summary, abstract,"
+                " summarized_at FROM document_versions WHERE id = :id"
+            ),
+            {"id": ref.version_id},
+        )
+    ).one()
+    assert row.ingestion_status == "summarized"
+    metadata = cast(dict[str, Any], row.metadata)
+    assert isinstance(metadata, dict)  # JSONB comes back parsed
+    assert metadata["title"] == "Annual report"
+    assert len(row.abstract.split()) == 50
+    assert len(row.chat_snippet.split()) == 150
+    assert len(row.executive_summary.split()) == 500
+    assert row.summarized_at is not None
+    assert [c.model for c in calls] == ["meta", "snippet", "exec", "abstract"]
+    assert enqueued == [ref]
+
+
+async def test_stage_2_records_an_empty_markdown_as_unexpected(
+    db: AsyncSession,
+) -> None:
+    ref = await seed(db, "converted")  # markdown stays NULL
+    complete, calls = scripted_completer()
+
+    with pytest.raises(RuntimeError):
+        await run_summarize_document_job(
+            SummarizeDocumentDeps(db, complete, FAKE_MODELS), ref
+        )
+    assert calls == []
+    assert (await version_row(db, ref.version_id))[:4] == (
+        "failed",
+        "Version has no Converted Markdown to summarize",
+        "unexpected",
+        "summarizing",
+    )

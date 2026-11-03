@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException
 
 from auth import auth_router
 from chat import chat_router
+from chat.chat_service import ChatDeps
 from document import document_router
 from event import events_router
 from event.events_bus import AppEventSubscriber
@@ -30,9 +31,6 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=settings.LOG_LEVEL.upper())
     configure_mappers()  # fail at boot, not on the first query, if a relationship target is missing
-    # Placeholder. T16 replaces it with the chat dependencies.
-    app.state.chat = None
-
     # T07: raw Document bytes live in MinIO; the bucket is created at boot if missing.
     storage = S3Storage(
         settings.MINIO_ENDPOINT,
@@ -57,17 +55,26 @@ async def lifespan(app: FastAPI):
     api_key = settings.OPENROUTER_API_KEY
     client = OpenRouterClient(api_key) if api_key else None
     embed = OpenRouterEmbedder(api_key, resolve_embedding_model()) if api_key else None
+    task_models = resolve_task_models()
     jobs = JobQueue(
         WorkerDeps(
             storage=storage,
             convert_to_markdown=DoclingConverter(),
             complete=client.complete if client else None,
-            models=resolve_task_models(),
+            models=task_models,
             embed=embed,
         )
     )
     await jobs.start()
     app.state.jobs = jobs
+
+    # T16: the chat answer path shares the embedder with ingestion; without a key the route
+    # answers 503.
+    app.state.chat = (
+        ChatDeps(client.stream, embed, task_models.chat_answer)
+        if client and embed
+        else None
+    )
 
     # T06: one LISTEN connection feeding every /events stream.
     app_events = AppEventSubscriber(settings.postgres_dsn)
