@@ -1,6 +1,3 @@
-"""T16's pure pieces: marker resolution (step 2) and, from step 3 on, the paragraph chunker.
-No database."""
-
 import uuid
 
 from chat.citations import (
@@ -25,7 +22,6 @@ def chunk(text: str) -> RetrievedChunk:
     )
 
 
-# Step 2
 def test_markers_resolve_only_against_retrieved_chunks() -> None:
     c1, c2 = chunk("one"), chunk("two")
     citations = resolve_citation_markers("A [2]. B [1, 2]. C [9][0].", [c1, c2])
@@ -53,7 +49,6 @@ def test_citation_instructions_name_the_marker_shape() -> None:
     )
 
 
-# Step 3
 def test_chunker_releases_whole_paragraphs_only() -> None:
     chunker = AnswerChunker()
     assert chunker.push("First para\n\nSecond ") == ["First para"]

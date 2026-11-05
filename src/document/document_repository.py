@@ -1,12 +1,3 @@
-"""T08 "What to write": the Document repository. This file is the skeleton the copied router
-expects: every method below is named and typed as the router calls it, and raises
-NotImplementedError until its step is written. Do not open the reference's version until the
-tests pass; then diff.
-
-A deleted Notebook keeps its rows. Every query under a Notebook joins `notebooks n` and checks
-its `deleted_at IS NULL` explicitly (the rule set in T04 step 1).
-"""
-
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
@@ -27,10 +18,6 @@ from .document_dto import (
     DocumentVersionDetailResponse,
 )
 
-# Every Document read starts from this prefix: each Document joined to its live Notebook and,
-# laterally, to its latest live Version. It stops before any WHERE; each method appends its own.
-# Deliberately absent: v.markdown (megabytes per row, read for one Version at a time) and
-# v.ingestion_error (the operator's record, never published).
 SELECT_DOCUMENTS_WITH_LATEST_VERSION = """
   SELECT d.id, d.notebook_id, d.filename, d.created_at,
          v.id AS version_id, v.version_number, v.mime_type, v.size_bytes, v.created_at AS version_created_at,
@@ -49,9 +36,6 @@ SELECT_DOCUMENTS_WITH_LATEST_VERSION = """
 """
 
 
-# One named Version with its Document and the number of the Document's latest live Version.
-# Requires the Version and its Notebook to be live, but not the Document: a Citation into a
-# deleted Document stays readable. Selects markdown and storage_key because it returns one row.
 SELECT_VERSION = """
   SELECT d.id AS document_id, d.notebook_id, d.filename, d.created_at AS document_created_at,
          v.id AS version_id, v.version_number, v.mime_type, v.size_bytes, v.created_at AS version_created_at,
@@ -68,7 +52,6 @@ SELECT_VERSION = """
 
 
 def to_version(row: Any) -> DocumentVersion:
-    """The v.* columns of SELECT_DOCUMENTS_WITH_LATEST_VERSION (or SELECT_VERSION) as a DTO."""
     return DocumentVersion(
         id=row.version_id,
         version_number=row.version_number,
@@ -79,8 +62,6 @@ def to_version(row: Any) -> DocumentVersion:
 
 
 def to_document(row: Any) -> DocumentResponse:
-    """One row of SELECT_DOCUMENTS_WITH_LATEST_VERSION as the Document the API publishes.
-    `failure` exists only for a failed Version; `ingestion_error` is never exposed."""
     failure = None
     if row.ingestion_status == "failed":
         failure = DocumentFailure(
@@ -109,17 +90,14 @@ class DownloadableVersion:
 class RestoreResult:
     outcome: Literal["restored", "not-found", "filename-taken"]
     document: DocumentResponse | None = None
-    filename: str | None = None  # for the 409 message
+    filename: str | None = None
 
 
 class DocumentRepository:
     def __init__(self, db: Annotated[AsyncSession, Depends(get_db)]):
         self.db = db
 
-    # step 1: the list query and the row mapper
     async def list_documents(self, notebook_id: uuid.UUID) -> list[DocumentResponse]:
-        """The live Documents of a live Notebook, oldest first. A Document with no live Version
-        has no lateral row and is not listed."""
         rows = await self.db.execute(
             text(
                 f"{SELECT_DOCUMENTS_WITH_LATEST_VERSION}"
@@ -132,7 +110,6 @@ class DocumentRepository:
     async def _find_document(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID
     ) -> DocumentResponse | None:
-        """One Document by id with its latest live Version, deleted or not; steps 2 and 4 re-read with it."""
         row = (
             await self.db.execute(
                 text(
@@ -143,7 +120,6 @@ class DocumentRepository:
         ).first()
         return to_document(row) if row else None
 
-    # step 2: create
     async def create_document_version(
         self,
         notebook_id: uuid.UUID,
@@ -152,9 +128,6 @@ class DocumentRepository:
         size_bytes: int,
         storage_key: str,
     ) -> DocumentResponse:
-        """Stores an upload as a Version. The partial unique index on (notebook_id, filename)
-        WHERE deleted_at IS NULL decides: a live Document with this filename gets a new Version,
-        otherwise a new Document is created. Called after the bytes are in storage."""
         document_id: uuid.UUID = (
             await self.db.execute(
                 text(
@@ -182,16 +155,12 @@ class DocumentRepository:
         )
         await self.db.commit()
         document = await self._find_document(notebook_id, document_id)
-        assert (
-            document is not None
-        )  # just committed in a Notebook the route checked is live
+        assert document is not None
         return document
 
-    # step 3: detail and the three Version-scoped reads
     async def find_document_detail(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID
     ) -> DocumentDetailResponse | None:
-        """One live Document in a live Notebook, with its latest Version's metadata and summaries."""
         row = (
             await self.db.execute(
                 text(
@@ -214,7 +183,6 @@ class DocumentRepository:
     async def _version_row(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID
     ) -> Any:
-        """The SELECT_VERSION row, or None. Shared by the three Version-scoped reads."""
         params = {
             "version_id": version_id,
             "document_id": document_id,
@@ -225,7 +193,6 @@ class DocumentRepository:
     async def find_document_version_detail(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID
     ) -> DocumentVersionDetailResponse | None:
-        """One named Version as it was: what following a Citation reads."""
         row = await self._version_row(notebook_id, document_id, version_id)
         if row is None:
             return None
@@ -249,7 +216,6 @@ class DocumentRepository:
     async def find_document_content(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID
     ) -> DocumentVersionContentResponse | None:
-        """The Converted Markdown of one Version; None markdown until ingestion stage 1 ran."""
         row = await self._version_row(notebook_id, document_id, version_id)
         return (
             DocumentVersionContentResponse(
@@ -269,11 +235,9 @@ class DocumentRepository:
             else None
         )
 
-    # step 4: delete and restore
     async def soft_delete_document(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID
     ) -> bool:
-        """False when no live Document matched: unknown, another Notebook, or already deleted."""
         result = await self.db.execute(
             text(
                 "UPDATE documents SET deleted_at = now()"
@@ -287,9 +251,6 @@ class DocumentRepository:
     async def restore_document(
         self, notebook_id: uuid.UUID, document_id: uuid.UUID
     ) -> RestoreResult:
-        """The filename collision is detected by letting the write fail: the partial unique index
-        rejects a second live Document with the name, and a check-then-update would still lose
-        to an upload committing in between."""
         try:
             result = await self.db.execute(
                 text(
@@ -300,9 +261,7 @@ class DocumentRepository:
             )
             await self.db.commit()
         except IntegrityError:
-            await (
-                self.db.rollback()
-            )  # the session accepts nothing until the failed transaction is gone
+            await self.db.rollback()
             filename: str = (
                 await self.db.execute(
                     text("SELECT filename FROM documents WHERE id = :id"),

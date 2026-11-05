@@ -1,6 +1,3 @@
-"""T10 step 4 (and step 1's DONE WHEN) and T12 step 5. Runs on the T05 `db` fixture: everything is
-rolled back, and nothing here touches the job queue, Docker or the network."""
-
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -31,7 +28,6 @@ from test.conftest import FakeStorage
 
 
 async def seed(db: AsyncSession, status: str = "queued") -> DocumentVersionRef:
-    """A notebook, a document and one Version, by SQL: a Stage test must not depend on the routes."""
     notebook_id: uuid.UUID = (
         await db.execute(
             text("INSERT INTO notebooks (title) VALUES ('N') RETURNING id")
@@ -66,7 +62,6 @@ async def version_row(db: AsyncSession, version_id: uuid.UUID) -> tuple:
     return tuple((await db.execute(sql, {"id": version_id})).one())
 
 
-# Step 1
 async def test_set_version_status_writes_all_four_columns(db: AsyncSession) -> None:
     ref = await seed(db)
     row = await load_version(db, ref, "storage_key")
@@ -95,7 +90,6 @@ async def test_set_version_status_writes_all_four_columns(db: AsyncSession) -> N
         None,
     )
 
-    # The third call clears the failure columns: migration 0012's check stays satisfied.
     await set_version_status(db, version, "converted", markdown="# A")
     assert await version_row(db, ref.version_id) == (
         "converted",
@@ -123,7 +117,6 @@ async def test_load_version_returns_none_for_a_deleted_or_unknown_version(
     )
 
 
-# Step 3
 async def test_stage_1_stores_the_markdown_and_hands_over(
     db: AsyncSession, tmp_path: Path
 ) -> None:
@@ -133,9 +126,7 @@ async def test_stage_1_stores_the_markdown_and_hands_over(
     handed_over: list[DocumentVersionRef] = []
 
     async def convert(input_path: Path, output_path: Path) -> None:
-        assert (
-            input_path.name == "report.md"
-        )  # the original name, so Docling can pick its parser
+        assert input_path.name == "report.md"
         output_path.write_text(input_path.read_bytes().decode() + "\n\nconverted")
 
     async def enqueue(payload: DocumentVersionRef) -> None:
@@ -154,7 +145,7 @@ async def test_stage_1_stores_the_markdown_and_hands_over(
         "# Report\n\nconverted",
     )
     assert handed_over == [ref]
-    assert list(tmp_path.iterdir()) == []  # the work directory was removed
+    assert list(tmp_path.iterdir()) == []
 
 
 async def test_stage_1_records_the_failure_reason(
@@ -202,7 +193,6 @@ async def test_stage_1_skips_a_deleted_version(
     assert (await version_row(db, ref.version_id))[0] == "queued"
 
 
-# T12 step 5
 SUMMARY_MARKDOWN = (
     "# Report\n\n" + "Revenue grew 12% in 2024. " * 40 + "\n\n## Risks\n\nSome risks."
 )
@@ -218,8 +208,6 @@ FAKE_MODELS = TaskModels(
 def scripted_completer() -> tuple[
     Callable[[ChatCompletionRequest], Awaitable[str]], list[ChatCompletionRequest]
 ]:
-    """Answers by model name, so one test can check which calls were made, in which order, and
-    what got stored."""
     calls: list[ChatCompletionRequest] = []
 
     async def complete(request: ChatCompletionRequest) -> str:
@@ -265,7 +253,7 @@ async def test_stage_2_stores_the_metadata_and_summaries_and_hands_over(
     ).one()
     assert row.ingestion_status == "summarized"
     metadata = cast(dict[str, Any], row.metadata)
-    assert isinstance(metadata, dict)  # JSONB comes back parsed
+    assert isinstance(metadata, dict)
     assert metadata["title"] == "Annual report"
     assert len(row.abstract.split()) == 50
     assert len(row.chat_snippet.split()) == 150
@@ -278,7 +266,7 @@ async def test_stage_2_stores_the_metadata_and_summaries_and_hands_over(
 async def test_stage_2_records_an_empty_markdown_as_unexpected(
     db: AsyncSession,
 ) -> None:
-    ref = await seed(db, "converted")  # markdown stays NULL
+    ref = await seed(db, "converted")
     complete, calls = scripted_completer()
 
     with pytest.raises(RuntimeError):

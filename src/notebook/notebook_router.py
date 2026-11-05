@@ -10,8 +10,6 @@ from auth.guard import CurrentUser
 from .notebook_dto import CreateNotebookBody, NotebookResponse, RenameNotebookBody
 from .notebook_service import NotebookService
 
-# Full paths rather than a prefix: the contract is `/notebooks`, and a prefix with "/" would
-# register `/notebooks/` and answer the bare path with a 307 redirect.
 router = APIRouter(tags=["notebooks"])
 
 

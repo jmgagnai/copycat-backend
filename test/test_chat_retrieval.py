@@ -1,5 +1,3 @@
-"""T16 step 1. Runs on the T05 `db` fixture: everything is rolled back, no LLM involved."""
-
 import uuid
 
 from sqlalchemy import text
@@ -24,7 +22,6 @@ async def seed_version(
     document_id: uuid.UUID | None = None,
     version_number: int = 1,
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """A Document (or a new Version of one) in the given status, with one chunk on axis 0."""
     if document_id is None:
         inserted: uuid.UUID = (
             await db.execute(
@@ -73,7 +70,6 @@ async def test_retrieval_returns_the_ready_chunk_with_its_similarity(
     notebook_id = await seed_notebook(db)
     document_id, version_id = await seed_version(db, notebook_id)
 
-    # Orthogonal to the chunk: similarity 0 (the spec's "close to 0").
     chunks = await retrieve_chunks(db, notebook_id, unit_vector(1))
     assert len(chunks) == 1 and abs(chunks[0].similarity) < 1e-6
     chunk = chunks[0]
@@ -85,11 +81,9 @@ async def test_retrieval_returns_the_ready_chunk_with_its_similarity(
     assert chunk.text == "Revenue grew 12%."
     assert chunk.chat_snippet == "A report about revenue."
 
-    # The same direction: similarity 1.
     same = await retrieve_chunks(db, notebook_id, unit_vector(0))
     assert len(same) == 1 and abs(same[0].similarity - 1.0) < 1e-6
 
-    # Another Notebook sees nothing.
     assert await retrieve_chunks(db, await seed_notebook(db), unit_vector(0)) == []
 
 
@@ -100,7 +94,6 @@ async def test_retrieval_skips_versions_that_are_not_ready(db: AsyncSession) -> 
 
 
 async def test_retrieval_reads_only_the_latest_version(db: AsyncSession) -> None:
-    """A re-upload still ingesting hides the superseded Version's chunks (docs/versioning.md)."""
     notebook_id = await seed_notebook(db)
     document_id, _ = await seed_version(db, notebook_id)
     assert len(await retrieve_chunks(db, notebook_id, unit_vector(0))) == 1
@@ -130,7 +123,6 @@ async def test_retrieval_honours_the_limit_and_orders_closest_first(
     assert len(await retrieve_chunks(db, notebook_id, unit_vector(1), limit=1)) == 1
 
 
-# T16 step 2: locating Citations needs `chunk_ranges`, so it lives with the database tests.
 async def test_locate_citations_fills_ranges_where_a_row_exists(
     db: AsyncSession,
 ) -> None:

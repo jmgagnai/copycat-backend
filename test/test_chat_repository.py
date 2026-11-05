@@ -1,6 +1,3 @@
-"""T15 step 2's DONE WHEN, at the repository level. Runs on the T05 `db` fixture: everything is
-rolled back, and no route or LLM is involved."""
-
 import uuid
 
 from sqlalchemy import text
@@ -11,7 +8,6 @@ from chat.chat_repository import ChatRepository
 
 
 async def seed_user_and_notebook(db: AsyncSession) -> tuple[uuid.UUID, str, uuid.UUID]:
-    """A user and a Notebook by SQL: a repository test must not depend on the routes."""
     user_email = f"{uuid.uuid4().hex[:8]}@example.com"
     user_id: uuid.UUID = (
         await db.execute(
@@ -54,11 +50,11 @@ async def test_chat_thread_round_trip(db: AsyncSession) -> None:
     assert await repo.delete_chat_thread(nb_id, thread.id) is True
     assert await repo.find_chat_thread(nb_id, thread.id) is None
     assert await repo.list_chat_threads(nb_id) == []
-    assert await repo.delete_chat_thread(nb_id, thread.id) is False  # already gone
+    assert await repo.delete_chat_thread(nb_id, thread.id) is False
 
     restored = await repo.restore_chat_thread(nb_id, thread.id)
     assert restored is not None and restored.id == thread.id
-    assert await repo.restore_chat_thread(nb_id, thread.id) is None  # not deleted
+    assert await repo.restore_chat_thread(nb_id, thread.id) is None
 
 
 async def test_a_deleted_notebook_hides_and_freezes_its_threads(

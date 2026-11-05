@@ -1,9 +1,3 @@
-"""The one definition of which Document Versions retrieval may read (docs/versioning.md).
-
-Two rules, in this order: per Document pick the latest non-deleted Version, then keep it only
-if it is `ready`. Folding the second into the first would silently serve a superseded Version's
-Chunks while a re-upload is still ingesting. Shared by search and chat retrieval. Takes `:notebook_id`."""
-
 SEARCHABLE_VERSIONS_CTE = """
   searchable_versions AS (
     SELECT

@@ -10,8 +10,6 @@ _response = ConfigDict(extra="ignore", frozen=False, populate_by_name=True)
 
 
 class ChatParticipant(BaseModel):
-    """Who did something: the email is what a reader recognises next to prose in a shared Thread."""
-
     model_config = _response
     id: uuid.UUID = Field(default=...)
     email: str = Field(default=...)
@@ -37,9 +35,6 @@ class RenameChatThreadBody(BaseModel):
 
 
 class CitationResponse(BaseModel):
-    """A pointer into one specific Document Version at one specific chunk; `versionNumber`,
-    `filename` and `headingPath` are read off the pinned Version and chunk, never the current one."""
-
     model_config = _response
     id: uuid.UUID = Field(default=...)
     marker: int = Field(default=..., gt=0)
@@ -56,9 +51,6 @@ class CitationResponse(BaseModel):
 
 
 class ChatMessageResponse(BaseModel):
-    """`askedBy` is on both roles: for an answer it is whose question produced it. `citations`
-    is always present, empty for a question."""
-
     model_config = _response
     id: uuid.UUID = Field(default=...)
     thread_id: uuid.UUID = Field(default=..., serialization_alias="threadId")

@@ -1,12 +1,3 @@
-"""Test harness.
-
-Tests run against the real development database named in ``DATABASE_URL`` (or
-``TEST_DATABASE_URL`` when set). Nothing is truncated: every test runs inside one database
-transaction that is rolled back at the end, so the development data is never touched and two
-tests may register the same email. Route code still calls ``commit()``; the session turns each
-of those into a savepoint release inside the outer transaction.
-"""
-
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -29,7 +20,6 @@ TEST_DSN = TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 @pytest_asyncio.fixture(scope="session")
 async def engine() -> AsyncIterator[AsyncEngine]:
-    """One engine for the whole run; every DB test is skipped when Postgres is unreachable."""
     try:
         conn = await asyncpg.connect(TEST_DSN, timeout=3)
         await conn.close()
@@ -42,7 +32,6 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 
 @pytest_asyncio.fixture
 async def db(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session whose work is rolled back when the test ends."""
     async with engine.connect() as conn:
         await conn.begin()
         session = AsyncSession(
@@ -56,8 +45,6 @@ async def db(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 class FakeStorage:
-    """In-memory stand-in for MinIO, with the same two methods and return shape as S3Storage."""
-
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
 
@@ -82,7 +69,6 @@ class FakeJobs:
 
 @pytest_asyncio.fixture
 async def client(db: AsyncSession) -> AsyncIterator[AsyncClient]:
-    """The app driven in-process; every request shares the test's rolled-back session."""
 
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db
@@ -102,7 +88,6 @@ async def client(db: AsyncSession) -> AsyncIterator[AsyncClient]:
 async def sign_in(
     client: AsyncClient, email: str = "ada@example.com", password: str = "correct horse"
 ) -> dict[str, Any]:
-    """Registers and logs in; the session cookie stays on the client."""
     user = (
         await client.post("/auth/register", json={"email": email, "password": password})
     ).json()

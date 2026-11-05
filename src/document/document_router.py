@@ -26,8 +26,6 @@ from .file_types import (
     resolve_accepted_mime_type,
 )
 
-# Full paths rather than a prefix: the contract is `/notebooks/{notebookId}/documents`, and a
-# prefix with "/" would register a trailing slash and answer the bare path with a 307.
 router = APIRouter(tags=["documents"])
 log = logging.getLogger(__name__)
 
@@ -37,30 +35,22 @@ VersionId = Annotated[uuid.UUID, Path(alias="versionId")]
 
 
 def get_storage(request: Request) -> S3Storage:
-    """The S3Storage the lifespan put on app.state (a FakeStorage in tests)."""
     return request.app.state.storage
 
 
 class ConversionJobs(Protocol):
-    """What the upload route needs from the job queue. jobs.tasks.JobQueue satisfies it. A
-    protocol rather than the class itself: importing jobs.tasks here would close an import cycle
-    (document -> jobs.tasks -> ingestion.stage -> document)."""
-
     async def enqueue_convert_to_markdown(
         self, document_id: uuid.UUID, version_id: uuid.UUID
     ) -> None: ...
 
 
 def get_jobs(request: Request) -> ConversionJobs | None:
-    """The JobQueue the lifespan put on app.state (a FakeJobs in tests, None when absent)."""
     return getattr(request.app.state, "jobs", None)
 
 
 async def enqueue_conversion(
     jobs: ConversionJobs | None, document_id: uuid.UUID, version_id: uuid.UUID
 ) -> None:
-    """Enqueued after the row is committed, never before; a failure to enqueue must not fail a
-    request whose row already records the work owed."""
     if jobs is None:
         return
     try:
@@ -171,7 +161,6 @@ async def restore_document(
     _: CurrentUser,
     repo: Annotated[DocumentRepository, Depends()],
 ) -> DocumentResponse:
-    """Reports 409 if the Notebook has since acquired another Document under the same filename."""
     result = await repo.restore_document(notebook_id, document_id)
     if result.outcome == "filename-taken":
         raise HTTPException(
@@ -196,8 +185,6 @@ async def get_document_version(
     _: CurrentUser,
     repo: Annotated[DocumentRepository, Depends()],
 ) -> DocumentVersionDetailResponse:
-    """Every field describes the Version named in the path, not the Document's latest Version:
-    this is what following a Citation reads."""
     version = await repo.find_document_version_detail(
         notebook_id, document_id, version_id
     )

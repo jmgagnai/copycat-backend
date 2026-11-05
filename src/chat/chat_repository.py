@@ -15,21 +15,15 @@ from .chat_dto import (
 )
 from .citations import ResolvedCitation
 
-# Threads always come back with their author's email joined in: attribution is the point.
 SELECT_THREAD = """
   SELECT t.id, t.notebook_id, t.title, t.created_at, u.id AS author_id, u.email AS author_email
   FROM chat_threads t JOIN users u ON u.id = t.created_by
 """
-# Holding a Thread id must not keep a deleted Notebook's chat readable or writable: every read
-# by id joins the live Notebook, and every UPDATE requires one.
 LIVE_NOTEBOOK_JOIN = "JOIN notebooks n ON n.id = t.notebook_id AND n.deleted_at IS NULL"
 SELECT_MESSAGE = """
   SELECT m.id, m.chat_thread_id, m.role, m.content, m.created_at, u.id AS asked_by_id, u.email AS asked_by_email
   FROM chat_messages m JOIN users u ON u.id = m.asked_by
 """
-# `version_number`, `filename` and `heading_path` come off the pinned Version and chunk, never
-# the Document's current Version, and `deleted_at` is not filtered: a soft-deleted Document's
-# past answers stay checkable.
 SELECT_CITATIONS = """
   SELECT ci.id, ci.chat_message_id, ci.marker, v.document_id, ci.document_version_id, v.version_number,
          ci.chunk_id, d.filename, c.heading_path, ci.char_start, ci.char_end
@@ -91,9 +85,6 @@ def to_chat_message(
 
 
 class ChatRepository:
-    """Per ADR-0001 there is no author check on reading, renaming or continuing a Thread; the
-    author and Administrator rules of its amendment (NBK-95) are the router's."""
-
     def __init__(self, db: Annotated[AsyncSession, Depends(get_db)]):
         self.db = db
 
@@ -111,7 +102,6 @@ class ChatRepository:
     async def find_chat_thread(
         self, notebook_id: uuid.UUID, thread_id: uuid.UUID
     ) -> ChatThreadResponse | None:
-        """Scoped to a live Notebook: holding a Thread id must not keep a deleted Notebook's chat readable."""
         row = (
             await self.db.execute(
                 text(
@@ -177,7 +167,6 @@ class ChatRepository:
     async def rename_chat_thread(
         self, notebook_id: uuid.UUID, thread_id: uuid.UUID, title: str
     ) -> ChatThreadResponse | None:
-        """The live-Notebook rule is on the UPDATE itself: a Thread in a deleted Notebook is left untouched."""
         if not await self._update_thread(
             "title = :title",
             "t.deleted_at IS NULL",
@@ -200,7 +189,6 @@ class ChatRepository:
     async def list_chat_messages(
         self, thread_id: uuid.UUID
     ) -> list[ChatMessageResponse]:
-        """Ordered by `seq`, not `created_at`: a question and its answer share a timestamp."""
         rows = list(
             await self.db.execute(
                 text(f"{SELECT_MESSAGE} WHERE m.chat_thread_id = :id ORDER BY m.seq"),
@@ -218,8 +206,6 @@ class ChatRepository:
         answer: str,
         citations: list[ResolvedCitation],
     ) -> tuple[ChatMessageResponse, ChatMessageResponse]:
-        """Appends a question, its answer and the answer's Citations in one transaction, so a
-        Thread never holds a question with no answer or an answer whose sources are missing."""
         base = {"thread_id": thread_id, "asked_by": asker_id}
         question_row = (
             await self.db.execute(

@@ -20,8 +20,6 @@ async def test_notebook_round_trip(db: AsyncSession) -> None:
         renamed is not None and renamed.id == notebook.id and renamed.title == "Renamed"
     )
 
-    # soft_delete_notebook returns the deleted entity (with deleted_at set), or None when
-    # no live Notebook matched: the plan's True/False, carrying the row as well.
     deleted = await repo.soft_delete_notebook(notebook.id)
     assert (
         deleted is not None
@@ -30,7 +28,6 @@ async def test_notebook_round_trip(db: AsyncSession) -> None:
     )
     assert await repo.notebook_exists(notebook.id) is False
     assert await repo.soft_delete_notebook(notebook.id) is None
-    # A deleted Notebook cannot be renamed.
     assert await repo.rename_notebook(notebook.id, "x") is None
 
     restored = await repo.restore_notebook(notebook.id)

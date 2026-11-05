@@ -1,5 +1,3 @@
-"""T05 steps 2 and 3: the harness itself."""
-
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -17,14 +15,12 @@ async def _count_ada(db: AsyncSession) -> int:
 
 async def test_register_ada_once(db: AsyncSession) -> None:
     assert await _count_ada(db) == 0
-    user = await AuthRepository(db).create_user(
-        "ada@example.com", "x"
-    )  # commits: a savepoint release
+    user = await AuthRepository(db).create_user("ada@example.com", "x")
     assert user.email == "ada@example.com"
-    assert await _count_ada(db) == 1  # visible inside this transaction
+    assert await _count_ada(db) == 1
 
 
 async def test_register_ada_again(db: AsyncSession) -> None:
-    assert await _count_ada(db) == 0  # the previous test left nothing
+    assert await _count_ada(db) == 0
     await AuthRepository(db).create_user("ada@example.com", "x")
     assert await _count_ada(db) == 1

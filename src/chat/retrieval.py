@@ -10,9 +10,6 @@ from ingestion.embed_chunks import to_vector_literal
 
 @dataclass(frozen=True)
 class RetrievedChunk:
-    """One Chunk retrieved for a question. The Version id travels out of retrieval because the
-    Version a Citation pins is the one retrieval chose, not whatever is latest later (NBK-12)."""
-
     chunk_id: uuid.UUID
     document_id: uuid.UUID
     document_version_id: uuid.UUID
@@ -23,7 +20,6 @@ class RetrievedChunk:
     similarity: float
 
 
-# ~1000-character Chunks, so twelve is ~12k characters of grounding plus one Chat Snippet per source.
 DEFAULT_RETRIEVAL_LIMIT = 12
 
 
@@ -33,9 +29,6 @@ async def retrieve_chunks(
     query_embedding: list[float],
     limit: int = DEFAULT_RETRIEVAL_LIMIT,
 ) -> list[RetrievedChunk]:
-    """The Chunks a question should be answered from, closest first, over `searchable_versions`.
-    Similarity is `1 - (embedding <=> query)`, pgvector's cosine distance; an exact scan, since no
-    ANN index can be built on 2560 dimensions (ADR-0005)."""
     rows = await db.execute(
         text(
             f"WITH {SEARCHABLE_VERSIONS_CTE}"

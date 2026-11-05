@@ -8,11 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db import get_db
 from notebook.notebook_entity import NotebookEntity
 
-# Deleted Notebooks are kept in the database (soft delete): every read filters on deleted_at IS NULL.
-
 
 def _to_entity(row: Any) -> NotebookEntity:
-    """A `RETURNING id, title, created_at, deleted_at` row as an entity, column by column."""
     return NotebookEntity(
         id=row.id, title=row.title, created_at=row.created_at, deleted_at=row.deleted_at
     )

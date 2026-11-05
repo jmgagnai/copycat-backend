@@ -18,13 +18,10 @@ KEEPALIVE_INTERVAL_S = 25
 
 
 def to_sse_frame(event: AppEvent) -> str:
-    # No `event:` line on purpose: an EventSource delivers unnamed frames to its single
-    # `message` listener, and the Angular client dispatches on the `type` inside the JSON.
     return f"id: {event.id}\ndata: {event.model_dump_json(by_alias=True)}\n\n"
 
 
 def get_app_events(request: Request) -> AppEventSubscriber | None:
-    # The lifespan stores the subscriber on app.state; the T05 client sets it to None.
     return getattr(request.app.state, "app_events", None)
 
 
@@ -48,14 +45,12 @@ async def stream_events(
     _: CurrentUser,
     topic: Annotated[list[str] | None, Query()] = None,
 ) -> StreamingResponse:
-    """`topic` may be repeated to follow several topics; omitted, everything is followed (per
-    ADR-0001 every authenticated user may see every Notebook)."""
     app_events = get_app_events(request)
     topics = set(topic) if topic else None
     queue: asyncio.Queue[AppEvent] = asyncio.Queue()
 
     async def frames() -> AsyncIterator[str]:
-        yield ": connected\n\n"  # a comment: flushes the headers so the EventSource opens at once
+        yield ": connected\n\n"
         unsubscribe = (
             app_events.subscribe(queue.put_nowait) if app_events else (lambda: None)
         )
@@ -71,7 +66,7 @@ async def stream_events(
                 if topics is None or event.topic in topics:
                     yield to_sse_frame(event)
         finally:
-            unsubscribe()  # the client went away: stop feeding this queue
+            unsubscribe()
 
     return StreamingResponse(
         frames(),

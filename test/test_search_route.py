@@ -1,6 +1,3 @@
-"""T17 step 3: the two stubbed search routes, through the ASGI client on T05's rolled-back
-session. Search itself was dropped, so both answer the empty result."""
-
 import uuid
 from typing import Any
 
@@ -25,7 +22,6 @@ async def test_search_answers_the_empty_result(client: AsyncClient) -> None:
     assert response.json() == EMPTY_SEARCH
     assert response.json()["total"] == 0
 
-    # The same shape with `exact`, and for Chat Threads.
     response = await client.get(f"/notebooks/{notebook['id']}/search?q=x&exact=true")
     assert response.status_code == 200 and response.json() == EMPTY_SEARCH
     response = await client.get(f"/notebooks/{notebook['id']}/search/threads?q=x")

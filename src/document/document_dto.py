@@ -6,9 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Where a Document Version is in the ingestion pipeline: stage 1 converts (queued ->
-# converting -> converted), stage 2 summarizes (summarizing -> summarized), stage 3 indexes
-# (indexing -> ready). `failed` is terminal for whichever stage exhausted its retries.
 DocumentStatus = Literal[
     "queued",
     "converting",
@@ -19,11 +16,9 @@ DocumentStatus = Literal[
     "ready",
     "failed",
 ]
-# Why a `failed` Version failed, in terms a user can act on (NBK-63); mirrored by migration 0012.
 FailureReason = Literal[
     "no-text-layer", "unreadable", "timed-out", "service-unavailable", "unexpected"
 ]
-# The failure reasons a Retry is offered for (NBK-110): those a second attempt could change.
 RETRYABLE_FAILURE_REASONS: list[str] = [
     "unexpected",
     "service-unavailable",
@@ -50,10 +45,6 @@ class DocumentVersion(BaseModel):
 
 
 class DocumentResponse(BaseModel):
-    """A Document with its latest Version only: per GLOSSARY.md only the latest Version is
-    searched in chat. `abstract` is on the list payload because that is where cards render;
-    the Executive Summary and the Converted Markdown deliberately are not."""
-
     model_config = _response
     id: uuid.UUID = Field(default=...)
     notebook_id: uuid.UUID = Field(default=..., serialization_alias="notebookId")
@@ -76,10 +67,6 @@ class DocumentDetailResponse(DocumentResponse):
 
 
 class DocumentVersionDetailResponse(BaseModel):
-    """One named Version, as it was: what following a Citation reads. Every artifact describes
-    that Version, not the Document's latest; `isLatestVersion` and `latestVersionNumber` are the
-    only facts about any other Version."""
-
     model_config = _response
     document_id: uuid.UUID = Field(default=..., serialization_alias="documentId")
     notebook_id: uuid.UUID = Field(default=..., serialization_alias="notebookId")

@@ -1,6 +1,3 @@
-"""T08 step 5. Runs on the T05 harness: FakeStorage and FakeJobs are installed by the `client`
-fixture, every test's rows are rolled back, and each test creates its own Notebook."""
-
 import uuid
 from typing import Any
 
@@ -26,7 +23,6 @@ async def upload(
     return response.json()
 
 
-# Step 1
 async def test_list_shows_live_documents_oldest_first(client: AsyncClient) -> None:
     await sign_in(client)
     notebook = await create_notebook(client)
@@ -45,7 +41,6 @@ async def test_list_shows_live_documents_oldest_first(client: AsyncClient) -> No
     assert (await client.get(f"/notebooks/{uuid.uuid4()}/documents")).status_code == 404
 
 
-# Step 2
 async def test_reuploading_a_filename_adds_a_version(client: AsyncClient) -> None:
     await sign_in(client)
     notebook = await create_notebook(client)
@@ -59,7 +54,6 @@ async def test_reuploading_a_filename_adds_a_version(client: AsyncClient) -> Non
     assert len((await client.get(f"/notebooks/{notebook['id']}/documents")).json()) == 1
 
 
-# Step 3 (and the happy path of step 5)
 async def test_upload_lists_reads_and_downloads_a_document(
     client: AsyncClient, db: AsyncSession
 ) -> None:
@@ -71,7 +65,6 @@ async def test_upload_lists_reads_and_downloads_a_document(
         and document["latestVersion"]["versionNumber"] == 1
     )
     assert document["failure"] is None and document["abstract"] is None
-    # The upload enqueued stage 1 for the new Version.
     assert app.state.jobs.enqueued == [
         (uuid.UUID(document["id"]), uuid.UUID(document["latestVersion"]["id"]))
     ]
@@ -106,7 +99,6 @@ async def test_upload_lists_reads_and_downloads_a_document(
     assert download.headers["content-type"].startswith("text/plain")
     assert download.headers["content-disposition"] == 'attachment; filename="notes.txt"'
 
-    # A second upload makes the first Version non-latest, still readable by id.
     newer = await upload(client, notebook["id"], content=b"v2")
     version = await client.get(f"{base}/versions/{version_id}")
     assert (
@@ -115,7 +107,6 @@ async def test_upload_lists_reads_and_downloads_a_document(
     )
     assert (await client.get(f"{base}/versions/{uuid.uuid4()}")).status_code == 404
 
-    # A deleted Document keeps its Versions readable (a Citation into it must still open).
     assert (await client.delete(base)).status_code == 204
     assert (await client.get(base)).status_code == 404
     for suffix in ("", "/content", "/download"):
@@ -123,7 +114,6 @@ async def test_upload_lists_reads_and_downloads_a_document(
             await client.get(f"{base}/versions/{version_id}{suffix}")
         ).status_code == 200
 
-    # A deleted Notebook hides everything.
     await db.execute(
         text("UPDATE notebooks SET deleted_at = now() WHERE id = :id"),
         {"id": notebook["id"]},
@@ -137,7 +127,6 @@ async def test_upload_lists_reads_and_downloads_a_document(
     ).status_code == 404
 
 
-# Step 4
 async def test_delete_and_restore_a_document(client: AsyncClient) -> None:
     await sign_in(client)
     notebook = await create_notebook(client)
@@ -152,7 +141,6 @@ async def test_delete_and_restore_a_document(client: AsyncClient) -> None:
         for d in (await client.get(f"/notebooks/{notebook['id']}/documents")).json()
     ]
 
-    # Restoring brings it back with its Version, as the same Document.
     restored = await client.post(f"{base}/restore")
     assert restored.status_code == 200
     assert (
@@ -161,14 +149,12 @@ async def test_delete_and_restore_a_document(client: AsyncClient) -> None:
     )
     assert (await client.get(base)).status_code == 200
 
-    # Delete it again; a re-upload of the name starts a new Document, so the old one cannot come back.
     assert (await client.delete(base)).status_code == 204
     replacement = await upload(client, notebook["id"], "a.txt")
     assert replacement["id"] != document["id"]
     conflict = await client.post(f"{base}/restore")
     assert conflict.status_code == 409
     assert '"a.txt"' in conflict.json()["message"]
-    # The session survived the failed write: the Notebook still lists the replacement.
     assert [
         d["id"]
         for d in (await client.get(f"/notebooks/{notebook['id']}/documents")).json()
@@ -181,7 +167,6 @@ async def test_delete_and_restore_a_document(client: AsyncClient) -> None:
     ).status_code == 404
 
 
-# Step 5: the rejections
 async def test_upload_refuses_unsupported_types_and_unknown_notebooks(
     client: AsyncClient,
 ) -> None:
@@ -203,7 +188,6 @@ async def test_upload_refuses_unsupported_types_and_unknown_notebooks(
         "message": "Notebook not found."
     }
 
-    # Without a session, nothing under /documents is reachable.
     assert (await client.post("/auth/logout")).status_code == 204
     assert (
         await client.get(f"/notebooks/{notebook['id']}/documents")

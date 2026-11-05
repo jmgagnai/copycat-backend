@@ -27,7 +27,6 @@ async def test_notebook_crud_and_restore(client: AsyncClient) -> None:
 
     assert (await client.delete(f"/notebooks/{notebook['id']}")).status_code == 204
     assert notebook["id"] not in await _listed_ids(client)
-    # A second delete, and a rename of a deleted Notebook, report not-found.
     second_delete = await client.delete(f"/notebooks/{notebook['id']}")
     assert second_delete.status_code == 404 and second_delete.json() == {
         "message": "Notebook not found."

@@ -1,7 +1,3 @@
-"""The seven chat routes: six CRUD routes over Chat Threads and their messages (T15), and asking
-a question (T16). Per ADR-0001 anyone may read, rename and continue a Thread; its amendment adds
-the author rule on delete and the Administrator rule on restore, both enforced here."""
-
 from __future__ import annotations
 
 import logging
@@ -38,8 +34,6 @@ Notebooks = Annotated[NotebookRepository, Depends()]
 
 
 def get_chat_deps(request: Request) -> ChatDeps | None:
-    """The OpenRouter-backed answer path, built once in the lifespan; absent (no
-    OPENROUTER_API_KEY), asking reports 503."""
     return getattr(request.app.state, "chat", None)
 
 
@@ -102,8 +96,6 @@ async def rename_chat_thread(
 async def delete_chat_thread(
     *, notebook_id: NotebookId, thread_id: ThreadId, user: CurrentUser, repo: Threads
 ) -> None:
-    """Soft-deletes the Chat Thread: its messages and Citations are kept and an Administrator can
-    restore it. Only the user who started the Thread may delete it (ADR-0001 amendment)."""
     thread = await repo.find_chat_thread(notebook_id, thread_id)
     if thread is None:
         raise HTTPException(404, "Chat Thread not found.")
@@ -112,7 +104,6 @@ async def delete_chat_thread(
             403, "Only the user who started a Chat Thread may delete it."
         )
     await repo.delete_chat_thread(notebook_id, thread_id)
-    # There is no list of deleted Threads: this line is how an Administrator finds one to restore.
     log.info(
         'Chat Thread deleted: id=%s title="%s" notebook=%s author=%s',
         thread_id,
@@ -130,7 +121,6 @@ async def delete_chat_thread(
 async def restore_chat_thread(
     *, notebook_id: NotebookId, thread_id: ThreadId, user: CurrentUser, repo: Threads
 ) -> ChatThreadResponse:
-    """Only an Administrator (a user whose email is in `ADMIN_EMAILS`) may call it."""
     if user.email.lower() not in settings.administrators:
         raise HTTPException(403, "Only an Administrator may restore a Chat Thread.")
     thread = await repo.restore_chat_thread(notebook_id, thread_id)
@@ -166,14 +156,9 @@ async def send_chat_message(
     body: Annotated[SendChatMessageBody, Body()],
     user: CurrentUser,
     repo: Threads,
-    # The same session serves the repository, the stream and retrieval.
     db: Annotated[AsyncSession, Depends(get_db)],
     chat: Annotated[ChatDeps | None, Depends(get_chat_deps)],
 ) -> SendChatMessageResponse:
-    """Retrieves the closest Chunks from the Notebook's latest-version `ready` Documents and
-    returns the complete recorded exchange. While the answer is generated it is also published
-    to `GET /events` as `chat-answer-chunk` events, then one `chat-answer-completed` naming the
-    persisted message and carrying its Citations; this response is the authoritative result."""
     thread = await repo.find_chat_thread(notebook_id, thread_id)
     if thread is None:
         raise HTTPException(404, "Chat Thread not found.")
@@ -183,7 +168,6 @@ async def send_chat_message(
             "Chat is not configured on this server: OPENROUTER_API_KEY is not set.",
         )
 
-    # Read before writing: the question being asked must not appear in its own history.
     history = await repo.list_chat_messages(thread.id)
     stream = AnswerStream(db, thread.notebook_id, thread.id)
     try:
@@ -191,7 +175,6 @@ async def send_chat_message(
             db, chat, thread.notebook_id, body.content, history, stream.chunk
         )
     except Exception as err:
-        # Nothing is recorded: asking again is the retry, and the preview others saw is dropped.
         log.exception("A chat answer could not be generated.")
         await stream.failed(str(err))
         raise HTTPException(

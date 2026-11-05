@@ -5,9 +5,6 @@ from settings import settings
 
 @dataclass(frozen=True)
 class TaskModels:
-    """Which OpenRouter model runs which generation task: server-side configuration only,
-    never user-selectable (NBK-1)."""
-
     metadata: str = "qwen/qwen3-30b-a3b-instruct-2507"
     section_summary: str = "mistralai/mistral-small-3.2-24b-instruct"
     chat_snippet: str = "qwen/qwen3-30b-a3b-instruct-2507"
@@ -17,7 +14,6 @@ class TaskModels:
 
 
 def resolve_task_models() -> TaskModels:
-    """The defaults, each overridden by its OPENROUTER_MODEL_* setting when that is non-empty."""
     d = TaskModels()
     return TaskModels(
         metadata=settings.OPENROUTER_MODEL_METADATA or d.metadata,

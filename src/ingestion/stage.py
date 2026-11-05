@@ -1,7 +1,3 @@
-"""What the job tasks and the ingestion Stages share: the job payload, the Version a Stage works
-on, the typed failure, and the two database helpers every Stage uses (T09 created it, T10 extends it).
-"""
-
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -22,17 +18,12 @@ DOCUMENT_VERSION_STATUS_CHANGED = "document-version-status-changed"
 
 @dataclass(frozen=True)
 class DocumentVersionRef:
-    """Which Version a job works on: the only thing a job argument carries. Ids only, so a retry
-    re-reads the current row instead of acting on stale data."""
-
     document_id: uuid.UUID
     version_id: uuid.UUID
 
 
 @dataclass(frozen=True)
 class IngestionVersion:
-    """The Version a Stage works on, plus what a browser needs to recognise it in an event."""
-
     notebook_id: uuid.UUID
     document_id: uuid.UUID
     version_id: uuid.UUID
@@ -40,18 +31,12 @@ class IngestionVersion:
 
 
 class IngestionFailure(Exception):
-    """A Stage's error that knows why, in user terms, the work could not be done (migration 0012's
-    five reasons). Anything else a Stage raises is recorded as `unexpected`."""
-
     def __init__(self, reason: FailureReason, message: str):
         super().__init__(message)
         self.reason: FailureReason = reason
 
 
 async def load_version(db: AsyncSession, ref: DocumentVersionRef, *columns: str) -> Any:
-    """The Stage's input row: `notebook_id`, `filename` and the requested `v.<columns>`, or None
-    when the Version is gone. The column names come from the Stage's code, never from a user. No
-    Notebook check on purpose: an enqueued job finishes its work; the routes hide the result."""
     selected = ", ".join(f"v.{c}" for c in columns)
     sql = text(
         f"SELECT d.notebook_id, d.filename, {selected} FROM document_versions v"
@@ -74,10 +59,6 @@ async def set_version_status(
     failed_at: FailedAt | None = None,
     **columns: Any,
 ) -> None:
-    """One UPDATE, one event, one commit. All four status columns are written on every call, so
-    migration 0012's check (failure columns NULL unless `failed`) can never be violated by a
-    leftover value. `pg_notify` is transactional: the browser hears about a status only once it
-    is committed."""
     reason: FailureReason | None = None
     if status == "failed":
         reason = error.reason if isinstance(error, IngestionFailure) else "unexpected"

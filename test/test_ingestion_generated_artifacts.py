@@ -1,6 +1,3 @@
-"""T12 step 3. No database, no network: the scripted completer of the tutorial answers by model
-name."""
-
 import pytest
 
 from ingestion.generated_artifacts import (

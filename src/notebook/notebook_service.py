@@ -8,8 +8,6 @@ from notebook.notebook_repository import NotebookRepository
 
 
 class NotebookService:
-    """Per ADR-0001 there is no ownership check: any authenticated user sees every Notebook."""
-
     def __init__(self, repo: Annotated[NotebookRepository, Depends()]):
         self.repo = repo
 

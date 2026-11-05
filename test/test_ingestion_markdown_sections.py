@@ -1,5 +1,3 @@
-"""T12 step 1. No database."""
-
 from ingestion.markdown_sections import split_markdown_sections
 
 

@@ -18,8 +18,6 @@ class RenameNotebookBody(BaseModel):
 
 
 class NotebookResponse(BaseModel):
-    """One shape for create, rename, restore and list answers; built from the entity."""
-
     model_config = ConfigDict(
         extra="ignore", frozen=False, populate_by_name=True, from_attributes=True
     )

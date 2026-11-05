@@ -1,6 +1,3 @@
-"""T06 step 6: the two automated checks. The listener and the SSE route are exercised by hand
-with psql and curl, since httpx's ASGITransport buffers a streaming response."""
-
 import uuid
 from datetime import UTC, datetime
 
@@ -21,8 +18,6 @@ def test_sse_frame_has_an_id_and_unnamed_data() -> None:
 
 
 async def test_publish_stamps_the_event(db: AsyncSession) -> None:
-    """publish_app_event fills in id and occurred_at and keeps the draft's fields. It runs on the
-    test's rolled-back session, so the NOTIFY is never delivered and nothing leaks."""
     notebook_id = uuid.uuid4()
     draft = AppEventDraft(
         type="document.ingestion.progress",
@@ -39,5 +34,4 @@ async def test_publish_stamps_the_event(db: AsyncSession) -> None:
     assert event.type == draft.type
     assert event.topic == f"notebook:{notebook_id}"
     assert event.data == {"stage": "metadata"}
-    # Two publishes never share an id.
     assert (await publish_app_event(db, draft)).id != event.id

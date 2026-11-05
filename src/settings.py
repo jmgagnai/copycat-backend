@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL_EMBEDDING: str
 
     DOCLING_IMAGE: str = "ghcr.io/docling-project/docling-serve-cpu:v1.1.0"
-    DOCLING_TIMEOUT_MS: int = 60 * 60_000  # one hour: a hard cap, not an expectation
+    DOCLING_TIMEOUT_MS: int = 60 * 60_000
     DOCLING_TABLE_MODE: str = "fast"
     DOCKER_BIN: str = "docker"
 

@@ -8,17 +8,12 @@ from event.events_dto import AppEventDraft, notebook_topic
 
 from .chat_dto import CitationResponse
 
-# The three app-event types a streamed answer travels as (NBK-11), on the Notebook's topic
-# because a Chat Thread is shared: everyone with the Notebook open watches the answer arrive.
 CHAT_ANSWER_CHUNK = "chat-answer-chunk"
 CHAT_ANSWER_COMPLETED = "chat-answer-completed"
 CHAT_ANSWER_FAILED = "chat-answer-failed"
 
 
 class AnswerChunker:
-    """Turns a model's token stream into the pieces a reader is shown: one per paragraph, released
-    when the blank line after it arrives. Nothing is released early, so a chunk is never revised."""
-
     def __init__(self) -> None:
         self.buffer = ""
 
@@ -33,9 +28,6 @@ class AnswerChunker:
 
 
 class AnswerStream:
-    """Publishes one answer's progress onto the app-event channel. `stream_id` is minted before
-    the answer exists; clients learn the row's id from the completion event."""
-
     def __init__(self, db: AsyncSession, notebook_id: uuid.UUID, thread_id: uuid.UUID):
         self.db = db
         self.index = 0
@@ -54,7 +46,6 @@ class AnswerStream:
         await self.db.commit()
 
     async def chunk(self, text: str) -> None:
-        # `index` lets a client notice it joined mid-answer and re-read the Thread instead.
         await self._publish(CHAT_ANSWER_CHUNK, {"index": self.index, "text": text})
         self.index += 1
 
@@ -64,7 +55,6 @@ class AnswerStream:
         question_id: uuid.UUID,
         citations: list[CitationResponse],
     ) -> None:
-        # Citations ride the completion event: they can only be resolved from the complete text.
         data = {"messageId": str(message_id), "questionId": str(question_id)}
         await self._publish(
             CHAT_ANSWER_COMPLETED,

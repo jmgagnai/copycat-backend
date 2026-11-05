@@ -1,6 +1,3 @@
-"""The OpenRouter embedder: texts in, one vector per text out, in the same order, sent in
-batches. There is exactly one embedding model, welded to the width of `chunks.embedding`."""
-
 import logging
 from collections.abc import Awaitable, Callable
 from functools import partial
@@ -11,11 +8,8 @@ from .openrouter import OPENROUTER_BASE_URL, headers, with_retries
 
 log = logging.getLogger(__name__)
 
-# The seam everything that needs embeddings depends on (T13 indexing, T16 chat); tests pass an `async def`.
 Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
 
-# How many texts go in one request: a 200-page document is hundreds of chunks, and one request
-# carrying all of them is rejected.
 DEFAULT_BATCH_SIZE = 32
 
 
@@ -56,8 +50,6 @@ class OpenRouterEmbedder:
         return [entry["embedding"] for entry in payload["data"]]
 
     async def __call__(self, texts: list[str]) -> list[list[float]]:
-        """An instance is an Embedder. Batches run one after another, not concurrently: this is
-        a background job, and a rate-limited API is best not hit with everything at once."""
         vectors: list[list[float]] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]

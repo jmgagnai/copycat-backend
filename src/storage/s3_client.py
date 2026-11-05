@@ -16,10 +16,6 @@ class StoredObject:
 
 
 class S3Storage:
-    """Raw Document bytes live in MinIO through the S3 API (NBK-5). boto3 is synchronous, so
-    every call runs in a thread; `path` addressing because MinIO has no virtual-host style.
-    Both the SDK and MinIO itself reset connections now and then, hence the generous retries."""
-
     def __init__(
         self,
         endpoint: str,
@@ -42,7 +38,6 @@ class S3Storage:
         )
 
     async def ensure_bucket(self) -> None:
-        """Creates the bucket if it doesn't already exist. Idempotent."""
         try:
             await asyncio.to_thread(self._client.head_bucket, Bucket=self.bucket)
         except Exception:  # noqa: BLE001

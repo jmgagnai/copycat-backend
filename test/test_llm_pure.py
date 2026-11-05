@@ -1,5 +1,3 @@
-"""T11 step 5: no database, no network."""
-
 from collections.abc import AsyncIterator, Callable
 
 import httpx
@@ -99,7 +97,7 @@ async def test_complete_rejects_an_error_body_after_retrying() -> None:
 
     with pytest.raises(RuntimeError, match="model is down"):
         await _client(handler).complete(REQUEST)
-    assert calls == 3  # one attempt plus the two default retries
+    assert calls == 3
 
 
 async def test_stream_yields_the_deltas() -> None:
@@ -127,7 +125,6 @@ async def test_embedder_batches_and_keeps_order() -> None:
         body = json.loads(request.read())
         assert request.url.path == "/api/v1/embeddings" and body["model"] == "emb"
         batches.append(body["input"])
-        # one tiny vector per text, encoding the text's index so order can be checked
         return httpx.Response(
             200,
             json={
@@ -144,4 +141,4 @@ async def test_embedder_batches_and_keeps_order() -> None:
     vectors = await embed([f"text {i}" for i in range(70)])
     assert [len(b) for b in batches] == [32, 32, 6]
     assert vectors == [[float(i)] for i in range(70)]
-    assert await embed([]) == [] and len(batches) == 3  # nothing sent for no texts
+    assert await embed([]) == [] and len(batches) == 3

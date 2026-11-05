@@ -1,6 +1,3 @@
-"""T15 step 5: the six Chat Thread routes, one case of each, through the ASGI client on T05's
-rolled-back session. T16 step 7: asking a question, 503 without deps and 201 with fakes."""
-
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -41,7 +38,6 @@ async def test_thread_crud_with_author_only_deletion(client: AsyncClient) -> Non
     assert renamed.status_code == 200 and renamed.json()["title"] == "Renamed"
     assert (await client.get(f"{threads_url}/{thread['id']}/messages")).json() == []
 
-    # Someone else may read and rename a Thread, but neither delete nor restore it.
     await sign_in(client, "grace@example.com")
     assert (await client.delete(f"{threads_url}/{thread['id']}")).status_code == 403
     assert (
@@ -53,7 +49,6 @@ async def test_thread_crud_with_author_only_deletion(client: AsyncClient) -> Non
     )
     assert (await client.delete(f"{threads_url}/{thread['id']}")).status_code == 204
     assert (await client.get(threads_url)).json() == []
-    # A deleted Thread is gone for every route, delete included.
     assert (await client.delete(f"{threads_url}/{thread['id']}")).status_code == 404
     assert (
         await client.get(f"{threads_url}/{thread['id']}/messages")
@@ -91,7 +86,6 @@ async def test_an_administrator_restores_a_deleted_thread(
     thread_url = f"/notebooks/{notebook['id']}/threads/{thread['id']}"
     assert (await client.delete(thread_url)).status_code == 204
 
-    # The author is not an Administrator; restore refuses before looking the Thread up.
     assert (await client.post(f"{thread_url}/restore")).status_code == 403
 
     await sign_in(client, "grace@example.com")
@@ -101,11 +95,9 @@ async def test_an_administrator_restores_a_deleted_thread(
         t["id"]
         for t in (await client.get(f"/notebooks/{notebook['id']}/threads")).json()
     ] == [thread["id"]]
-    # Nothing left to restore.
     assert (await client.post(f"{thread_url}/restore")).status_code == 404
 
 
-# T16
 async def fake_embed(texts: list[str]) -> list[list[float]]:
     return [unit_vector(0) for _ in texts]
 
@@ -154,7 +146,6 @@ async def test_asking_records_the_exchange(client: AsyncClient) -> None:
     response = await client.post(messages_url, json={"content": "What?"})
     assert response.status_code == 201, response.text
     exchange = response.json()
-    # No ready Document: the application answers itself, and both rows carry the asker.
     assert exchange["question"]["content"] == "What?"
     assert exchange["question"]["role"] == "user"
     assert exchange["answer"]["content"] == NO_SOURCES_ANSWER

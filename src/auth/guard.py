@@ -8,9 +8,6 @@ from . import AuthEntity, AuthRepository
 from .auth_jwt import verify_session_token
 from .cookie import SESSION_COOKIE_NAME
 
-# Declaring the cookie as an OpenAPI security scheme (same name as the Node contract) makes
-# Swagger show a padlock on protected routes. The browser attaches the HttpOnly cookie itself,
-# so in Swagger UI a successful "Try it out" on POST /auth/login is all that is needed.
 session_cookie = APIKeyCookie(
     name=SESSION_COOKIE_NAME,
     scheme_name="sessionCookie",

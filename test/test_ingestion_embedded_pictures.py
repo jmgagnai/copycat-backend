@@ -1,5 +1,3 @@
-"""T12 step 2. No database."""
-
 from ingestion.embedded_pictures import EMBEDDED_PICTURE, without_embedded_pictures
 
 

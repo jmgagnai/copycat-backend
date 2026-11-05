@@ -20,9 +20,6 @@ from .streaming import AnswerChunker
 
 @dataclass
 class ChatDeps:
-    """What the chat module needs to answer a question: the OpenRouter streamer, the same
-    embedder ingestion uses, and the fixed server-side chat model."""
-
     stream: ChatStreamer
     embed: Embedder
     model: str
@@ -35,7 +32,6 @@ class GroundedAnswer:
     citations: list[ResolvedCitation]
 
 
-# Said by the application, not generated: with no grounding a model can only guess.
 NO_SOURCES_ANSWER = (
     "I have no sources to answer from yet. This Notebook has no Documents that have "
     'finished ingesting — upload one, or wait for an upload to reach the "ready" status, '
@@ -58,8 +54,6 @@ HISTORY_MESSAGE_LIMIT = 10
 
 
 def format_sources(chunks: list[RetrievedChunk]) -> str:
-    """Grouped by source (each introduced by its Chat Snippet once) with each Chunk labelled by
-    its 1-based marker in retrieval order, which `resolve_citation_markers` reads back."""
     markers = {chunk.chunk_id: i + 1 for i, chunk in enumerate(chunks)}
     by_source: dict[uuid.UUID, list[RetrievedChunk]] = {}
     for chunk in chunks:
@@ -91,7 +85,6 @@ def format_history(history: list[ChatMessageResponse]) -> str:
 def build_user_turn(
     chunks: list[RetrievedChunk], history: list[ChatMessageResponse], question: str
 ) -> str:
-    """The three sections of the user turn; the history one only when there is any."""
     sections = ["## Sources", format_sources(chunks)]
     if rendered := format_history(history):
         sections += ["## The Chat Thread so far", rendered]
@@ -110,10 +103,6 @@ async def stream_answer(
     history: list[ChatMessageResponse],
     on_chunk: OnChunk,
 ) -> GroundedAnswer:
-    """Embeds the question, retrieves the closest Chunks from the Notebook's latest-version
-    `ready` Documents, and streams the answer: `on_chunk` once per paragraph, in order. The
-    returned answer is assembled from the full text, and its markers are resolved only against
-    the Chunks just retrieved. Throws if generation fails, so the caller records nothing."""
     (query_embedding,) = await deps.embed([question])
     chunks = await retrieve_chunks(
         db, notebook_id, query_embedding, deps.retrieval_limit

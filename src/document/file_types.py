@@ -1,6 +1,3 @@
-"""Upload accepts text, Markdown, DOCX, Excel (.xlsx), CSV and PDF (NBK-5), keyed by extension
-rather than the client's MIME type, which browsers are inconsistent about."""
-
 ACCEPTED_EXTENSIONS: dict[str, str] = {
     ".txt": "text/plain",
     ".md": "text/markdown",
@@ -13,9 +10,6 @@ ACCEPTED_EXTENSIONS: dict[str, str] = {
 
 ACCEPTED_TYPES_DESCRIPTION = "text, Markdown, DOCX, Excel (.xlsx), CSV, and PDF"
 
-# Extensions a user has a specific reason to expect, with the reason they are refused: the
-# pinned Docling image has no backend for legacy .xls, so accepting it would only store bytes
-# that can never be converted.
 EXPLAINED_REJECTIONS: dict[str, str] = {
     ".xls": "Legacy Excel (.xls) is not supported; re-save it as .xlsx and upload that.",
 }

@@ -31,7 +31,6 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=settings.LOG_LEVEL.upper())
     configure_mappers()  # fail at boot, not on the first query, if a relationship target is missing
-    # T07: raw Document bytes live in MinIO; the bucket is created at boot if missing.
     storage = S3Storage(
         settings.MINIO_ENDPOINT,
         settings.MINIO_ACCESS_KEY,
@@ -44,14 +43,11 @@ async def lifespan(app: FastAPI):
         "Bucket %s ready at %s", settings.DOCUMENTS_BUCKET, settings.MINIO_ENDPOINT
     )
 
-    # T09: the job worker runs inside this process. Without an OpenRouter key only Stage 1 runs.
     if not settings.OPENROUTER_API_KEY:
         log.warning(
             "OPENROUTER_API_KEY is not set: ingestion stages 2 and 3 will not run and Documents will stop at"
             ' the "converted" status.'
         )
-    # T11: one client and one embedder for the whole process, only when a key is set. Stage 3
-    # and chat must embed with the same model, and this is where that is guaranteed.
     api_key = settings.OPENROUTER_API_KEY
     client = OpenRouterClient(api_key) if api_key else None
     embed = OpenRouterEmbedder(api_key, resolve_embedding_model()) if api_key else None
@@ -68,15 +64,12 @@ async def lifespan(app: FastAPI):
     await jobs.start()
     app.state.jobs = jobs
 
-    # T16: the chat answer path shares the embedder with ingestion; without a key the route
-    # answers 503.
     app.state.chat = (
         ChatDeps(client.stream, embed, task_models.chat_answer)
         if client and embed
         else None
     )
 
-    # T06: one LISTEN connection feeding every /events stream.
     app_events = AppEventSubscriber(settings.postgres_dsn)
     await app_events.start()
     app.state.app_events = app_events
@@ -84,7 +77,6 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # shutdown, in reverse order of startup
         await app_events.close()
         await jobs.stop()
 
@@ -121,7 +113,6 @@ app.include_router(events_router, tags=["Event Operations"])
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    """Errors are `{"message": "..."}`, as the Node backend's contract has them."""
     return JSONResponse(
         status_code=exc.status_code,
         content={"message": str(exc.detail)},

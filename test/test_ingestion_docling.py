@@ -1,5 +1,3 @@
-"""T10 step 2. No database. The timeout test starts Docker for a millisecond."""
-
 import shutil
 from pathlib import Path
 

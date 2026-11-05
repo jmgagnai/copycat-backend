@@ -1,6 +1,3 @@
-"""T16 step 3's `AnswerStream`, on the T05 `db` fixture: the events go through `pg_notify` on
-the test's session, so publishing must leave the session usable."""
-
 import uuid
 
 from sqlalchemy import text

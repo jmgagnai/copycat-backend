@@ -1,12 +1,3 @@
-"""Stage 2's generation code (T12 step 3): the metadata and the three summaries, each one model
-call over the Converted Markdown cut at a character budget. Pure: it takes a completer and the
-model names, and returns text. No database, no queue, no module-level client.
-
-Anything past a budget is simply not seen by the model; that is accepted by decision. The Node
-extras (section summaries, corrective rewrite, trimming, warnings, resumable cache) are skipped on
-purpose.
-"""
-
 import json
 import re
 from dataclasses import dataclass
@@ -17,10 +8,7 @@ from llm.openrouter import ChatCompleter, ChatCompletionRequest
 
 from .markdown_sections import MarkdownSection, split_markdown_sections
 
-# name -> (min words, max words, brief). Briefs and word ranges from the Node
-# `generated-artifacts.ts`; the name is also the `TaskModels` attribute that runs it.
 ARTIFACT_BRIEFS: dict[str, tuple[int, int, str]] = {
-    # "Optimized for a model to read, not a human" (GLOSSARY.md).
     "chat_snippet": (
         150,
         300,
@@ -32,7 +20,6 @@ ARTIFACT_BRIEFS: dict[str, tuple[int, int, str]] = {
             " kinds of question it can answer."
         ),
     ),
-    # "Shown first when a user opens a document" (GLOSSARY.md).
     "executive_summary": (
         500,
         1000,
@@ -57,8 +44,6 @@ ARTIFACT_BRIEFS: dict[str, tuple[int, int, str]] = {
     ),
 }
 
-# A rough rule: four characters per token. 120,000 characters is about 30k tokens, within the
-# default models' windows with room for the answer. Lower it if a model rejects the prompt.
 METADATA_CHAR_BUDGET = 12_000
 ARTIFACT_CHAR_BUDGET = 120_000
 
@@ -76,13 +61,10 @@ METADATA_SYSTEM = (
 
 
 def truncate(text: str, limit: int) -> str:
-    """Cuts at the budget and says so, so the model does not treat the cut as the end."""
     return text if len(text) <= limit else f"{text[:limit]}\n\n[truncated]"
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
-    """Models wrap JSON in a code fence or add a sentence: pull the outermost braces out first.
-    No object at all is a `ValueError`, which the job records as an `unexpected` failure."""
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError(f"Expected a JSON object, got: {text[:200]}")
@@ -94,9 +76,6 @@ def parse_json_object(text: str) -> dict[str, Any]:
 
 @dataclass
 class GenerationDeps:
-    """What the generation code needs: the job builds it from the real client, tests from a
-    fake. No patching."""
-
     complete: ChatCompleter
     models: TaskModels
 
@@ -110,8 +89,6 @@ class GenerationResult:
 
 
 def heading_outline(sections: list[MarkdownSection]) -> str:
-    """One line per heading, indented by level, first 80 only: the document's shape in a few
-    hundred characters, for the metadata call."""
     lines = [
         f"{'  ' * (s.level - 1)}{s.heading}" for s in sections if s.heading is not None
     ]
@@ -143,7 +120,6 @@ async def extract_metadata(
 
 
 def _artifact_header(filename: str, metadata: dict[str, Any]) -> str:
-    """`Document:` always; `Type:` and `Authors:` only when the metadata states them."""
     lines = [f"Document: {metadata.get('title') or filename}"]
     if document_type := metadata.get("documentType"):
         lines.append(f"Type: {document_type}")
@@ -187,7 +163,6 @@ async def generate_artifact(
 async def generate_artifacts(
     deps: GenerationDeps, *, filename: str, markdown: str
 ) -> GenerationResult:
-    """Four calls in total: metadata, then chat snippet, executive summary and abstract."""
     sections = split_markdown_sections(markdown)
     metadata = await extract_metadata(
         deps, filename=filename, markdown=markdown, sections=sections

@@ -1,6 +1,3 @@
-"""T16 step 4: `stream_answer` end to end with a fake streamer and embedder, on the T05 `db`
-fixture. No network."""
-
 from collections.abc import AsyncIterator
 
 import pytest
@@ -67,7 +64,7 @@ async def test_stream_answer_says_so_without_sources(db: AsyncSession) -> None:
 
     async def never_stream(request: ChatCompletionRequest) -> AsyncIterator[str]:
         raise AssertionError("the model must not be called without sources")
-        yield ""  # makes this an async generator
+        yield ""
 
     pieces: list[str] = []
 
@@ -117,6 +114,5 @@ async def test_prompt_formatting(db: AsyncSession) -> None:
     assert format_history([]) == ""
     turn = build_user_turn(chunks, [message], "Now?")
     assert "## The Chat Thread so far\n\nQuestion: Earlier?" in turn
-    # Two chunks of one source are introduced by that source once.
     two = format_sources([chunk("a"), chunk("b")])
-    assert two.count("### Source:") == 2  # distinct Versions: two sources
+    assert two.count("### Source:") == 2
