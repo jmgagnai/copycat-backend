@@ -43,6 +43,4 @@ the grouping are new.
 
 ### References
 
-- Python: `BACKEND/reference-backend/src/search/exchanges.py` and the second route of
-  `search_router.py`.
 - Node: `apps/backend/src/search/exchanges.ts`.

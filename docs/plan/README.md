@@ -4,18 +4,9 @@ This plan takes `BACKEND/copycat-backend` from its current state (DTOs generated
 OpenAPI contract, entity skeletons, a working auth module, every other route a
 `NotImplementedError` stub) to a backend the Angular frontend of `NOTEBOOKS` can run against.
 The API contract is `NOTEBOOKS/apps/backend/openapi.json`; the behaviour to reproduce is the Node
-backend in `NOTEBOOKS/apps/backend/src`; a finished Python port with the same stack sits in
-`BACKEND/reference-backend` and every task points at the matching files in both.
+backend in `NOTEBOOKS/apps/backend/src`.
 
-The plan is optimised for **Python learning per hour**. Every task has a mode:
-
-- **Write**: build it by hand. These are the tasks where the Python is (asyncio, FastAPI
-  internals, SQLAlchemy, streaming HTTP, subprocesses, a job queue). Eleven tasks, about 10 days.
-- **Copy**: take the files from `reference-backend`, adapt the imports, run the tests. The feature
-  is needed but writing it teaches nothing new. Four tasks, about 1 day in total.
-- **Stub**: one route answering an empty result so the frontend does not break. One task.
-- **Drop**: not implemented at all. Four tasks. Their files stay in `tasks/` with the original
-  description under "If you pick it up later".
+The plan is optimised for **Python learning per hour**.
 
 Each task lives in `tasks/Txx-*.md` with its mode, effort, priority, dependencies, a short tutorial
 of what you need to know (with runnable examples), what exists
@@ -68,7 +59,7 @@ Before the trim the plan was about 15.5 days. What was cut and why:
 - **T18 Thread search** (0.5 d): a repeat of T17. Covered by the same stub.
 - **T19 Contract script** (0.25 d) and **T20 Polish** (0.5 d): checking and housekeeping. T19 keeps
   only the frontend round trip.
-- **T02, T03, T07, T15** (2.25 d → 0.85 d) and **T08's routes** (0.5 d): copied from
+- **T02, T03, T07, T15** (2.25 d → 0.85 d) and **T08's routes** (0.5 d): redundant code copied from
   `reference-backend` instead of typed; each file says exactly what to copy and what to read once.
 
 ## Where the learning is
@@ -161,8 +152,6 @@ flowchart LR
     class T14,T18,T20 drop
 ```
 
-Blue is hand-written, grey is copied from `reference-backend`, dashed amber is a stub, dashed
-grey is dropped.
 
 ## Timeline (one developer)
 
@@ -207,8 +196,6 @@ gantt
 - Port the Node SQL as it is; the queries encode decisions (`docs/versioning.md`,
   `docs/search.md`) that look wrong until you read why.
 - Error bodies are `{"message": "..."}` and every JSON key is camelCase; the frontend reads nothing else.
-- When copying from `reference-backend`, read the file once before pasting it, fix the imports,
-  and run the task's tests. Do not "improve" it; the time is for the Write tasks.
 - Keep the simplifications the reference made rather than re-adding Node's accuracy: failures are
   recorded on every attempt, LLM failures are `unexpected`, summaries are one call per artifact
   over the truncated Markdown (no per-section pass, by decision), and there is no retry.

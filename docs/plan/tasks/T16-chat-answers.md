@@ -535,5 +535,3 @@ uv run pytest test/test_chat_pure.py test/test_chat_route.py -q
 ## References
 
 - Node: `apps/backend/src/chat/{answer-question,citations,retrieval,streaming,routes}.ts`.
-- Reference: `BACKEND/reference-backend/src/chat/`; tests in `test/test_chat_pure.py` and
-  `test/test_chat_route.py`.

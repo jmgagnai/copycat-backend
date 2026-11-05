@@ -6,13 +6,17 @@ A notebook is basically a [RAG](https://www.promptingguide.ai/research/rag) inst
 You add documents, they are indexed, summarized and used to ground one or several conversation chatbot(s).<br>
 The chat messages include citations, making it easier to check the answers.<br>
 You could also search messages and documents by keyword (not implemented yet).<br>
+![home page](docs/screenshot-home.png)
 
+![chat page](docs/screenshot-chat.png)
 
-This repository is the backend only.<br>
+<br>
+
+This repository is the **backend only**.<br>
 It serves the same HTTP contract as the original Node
 backend, so the existing Angular frontend runs against it unchanged.
 
-![Copycat Notebooks UI](docs/screenshot-placeholder.svg)
+
 
 ## Features
 
@@ -195,7 +199,7 @@ The work is split into twenty tasks. Each task file has four parts:
 1. a short tutorial of what you need to know, with runnable examples;
 2. what to build, step by step;
 3. a "DONE WHEN" check for each step;
-4. references to the original Node code and to a finished Python port.
+4. references to the original Node code.
 
 Where to look:
 

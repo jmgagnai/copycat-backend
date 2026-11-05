@@ -381,4 +381,3 @@ uv run pytest test/test_ingestion_pure.py test/test_ingestion_jobs.py -q
 ## References
 
 - Node: `apps/backend/src/ingestion/{chunking,embed-chunks}.ts`, `documents/chunk-ranges.ts`; `docs/ingestion-embeddings.md`.
-- Reference: `BACKEND/reference-backend/src/ingestion/{chunking,embed_chunks}.py`.

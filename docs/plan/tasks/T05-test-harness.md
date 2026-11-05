@@ -335,4 +335,4 @@ For `await client.post("/notebooks", json={"title": "Research"})` in a test:
 
 ## References
 
-- Reference: `BACKEND/reference-backend/test/conftest.py`, `pyproject.toml`.
+- Reference: `pyproject.toml`.

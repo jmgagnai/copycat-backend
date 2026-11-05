@@ -147,5 +147,4 @@ then check three things:
 
 ### References
 
-- Python: `BACKEND/reference-backend/src/search/`.
 - Node: `apps/backend/src/search/`; NOTEBOOKS `docs/search.md`.
